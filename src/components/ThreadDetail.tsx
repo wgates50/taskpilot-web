@@ -8,6 +8,7 @@ import { FinanceCard } from './cards/FinanceCard';
 import { WeatherCard } from './cards/WeatherCard';
 import { CalendarPreviewCard } from './cards/CalendarPreviewCard';
 import { JobCard } from './cards/JobCard';
+import { WeeklyPlannerView } from './WeeklyPlannerView';
 import { v4 as uuidv4 } from 'uuid';
 
 interface MessageRow {
@@ -108,6 +109,11 @@ export function ThreadDetail({ task, onBack }: Props) {
   };
 
   let lastDateLabel = '';
+
+  // Use calendar grid layout for weekly planner
+  if (task.id === 'weekly-planner') {
+    return <WeeklyPlannerView task={task} onBack={onBack} />;
+  }
 
   return (
     <div className="flex flex-col h-full bg-gray-50">

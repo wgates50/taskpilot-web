@@ -1,0 +1,347 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { type TaskMeta } from '@/lib/tasks';
+
+interface CalendarEvent {
+  title: string;
+  time?: string;
+}
+
+interface DayData {
+  label?: string;
+  day?: string;
+  date?: string;
+  events: CalendarEvent[] | number;
+  energy?: string;
+  freeEvening?: boolean;
+  suggestion?: string;
+}
+
+interface ClosingSoonItem {
+  title: string;
+  deadline?: string;
+  url?: string;
+}
+
+interface CalendarPreviewData {
+  energy?: string;
+  days?: DayData[];
+  closing_soon?: ClosingSoonItem[];
+  week_label?: string;
+  summary?: {
+    total_events?: number;
+    free_evenings?: number;
+    free_weekend_slots?: number;
+  };
+}
+
+interface MessageRow {
+  id: string;
+  task_id: string;
+  blocks: Array<{ type: string; data: Record<string, unknown> }>;
+  timestamp: string;
+  is_from_user: boolean;
+}
+
+interface Props {
+  task: TaskMeta;
+  onBack: () => void;
+}
+
+type SlotAction = 'accepted' | 'swap' | 'dismissed';
+
+const ENERGY_BADGE: Record<string, string> = {
+  high: 'bg-red-100 text-red-700',
+  packed: 'bg-red-100 text-red-700',
+  medium: 'bg-amber-100 text-amber-700',
+  balanced: 'bg-green-100 text-green-700',
+  low: 'bg-green-100 text-green-700',
+  'wide open': 'bg-blue-100 text-blue-700',
+};
+
+export function WeeklyPlannerView({ task, onBack }: Props) {
+  const [messages, setMessages] = useState<MessageRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [slotStates, setSlotStates] = useState<Record<string, SlotAction>>({});
+
+  useEffect(() => {
+    const fetchMessages = async () => {
+      try {
+        const res = await fetch(`/api/messages?taskId=${task.id}&limit=50`);
+        if (res.ok) {
+          const data = await res.json();
+          setMessages(data.messages || []);
+        }
+      } catch (e) {
+        console.error('Failed to fetch messages:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMessages();
+  }, [task.id]);
+
+  // Find the most recent calendar_preview block across all messages
+  const calendarData = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.is_from_user) {
+        const block = msg.blocks.find(b => b.type === 'calendar_preview');
+        if (block) return block.data as CalendarPreviewData;
+      }
+    }
+    return {} as CalendarPreviewData;
+  })();
+
+  const days = calendarData.days || [];
+  const closingSoon = calendarData.closing_soon || [];
+  const topEnergy = calendarData.energy || '';
+
+  // Summary stats — use pre-computed if available, otherwise derive
+  const totalEvents = calendarData.summary?.total_events ?? days.reduce((sum, day) => {
+    if (typeof day.events === 'number') return sum + day.events;
+    return sum + ((day.events as CalendarEvent[])?.length || 0);
+  }, 0);
+
+  const freeEvenings = calendarData.summary?.free_evenings ?? days.filter(d => d.freeEvening).length;
+
+  const freeWeekendSlots = calendarData.summary?.free_weekend_slots ?? days.filter(d => {
+    const label = (d.label || d.day || '').toLowerCase();
+    if (!label.startsWith('sat') && !label.startsWith('sun')) return false;
+    const count = typeof d.events === 'number' ? d.events : (d.events as CalendarEvent[])?.length || 0;
+    return count === 0;
+  }).length;
+
+  const header = (
+    <div className="flex items-center gap-3 px-4 py-3 bg-white border-b shrink-0">
+      <button onClick={onBack} className="text-blue-600 text-lg font-medium leading-none">&larr;</button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{task.icon}</span>
+          <span className="font-semibold text-gray-900 truncate">{task.name}</span>
+          {topEnergy && (
+            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${ENERGY_BADGE[topEnergy.toLowerCase()] || 'bg-gray-100 text-gray-600'}`}>
+              {topEnergy}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-gray-400 mt-0.5">
+          {calendarData.week_label || task.schedule}
+        </p>
+      </div>
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full bg-gray-50">
+        {header}
+        <div className="flex items-center justify-center flex-1 text-gray-400 text-sm">Loading planner…</div>
+      </div>
+    );
+  }
+
+  if (days.length === 0) {
+    return (
+      <div className="flex flex-col h-full bg-gray-50">
+        {header}
+        <div className="flex flex-col items-center justify-center flex-1 gap-2 px-8 text-center">
+          <span className="text-4xl">📋</span>
+          <p className="text-gray-500 text-sm">No plan yet.</p>
+          <p className="text-gray-400 text-[12px]">This task will post here on its next run — Sundays at 2 PM.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-gray-50">
+      {header}
+
+      {/* Summary bar */}
+      <div className="flex items-center gap-5 px-4 py-3 bg-white border-b shrink-0">
+        <SummaryPill icon="📅" value={totalEvents} label="this week" />
+        <div className="w-px h-8 bg-gray-100" />
+        <SummaryPill icon="🌙" value={freeEvenings} label="free evenings" />
+        <div className="w-px h-8 bg-gray-100" />
+        <SummaryPill icon="☀️" value={freeWeekendSlots} label="free wknd slots" />
+      </div>
+
+      {/* Calendar grid */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
+        {days.map((day, i) => {
+          const label = day.label || day.day || `Day ${i + 1}`;
+          const isWeekend = label.toLowerCase().startsWith('sat') || label.toLowerCase().startsWith('sun');
+          const events = typeof day.events === 'number' ? [] : (day.events as CalendarEvent[]) || [];
+          const eventCount = typeof day.events === 'number' ? day.events : events.length;
+          const slotKey = `day-${i}`;
+          const slotState = slotStates[slotKey];
+
+          return (
+            <div
+              key={i}
+              className={`bg-white rounded-xl shadow-sm border overflow-hidden ${isWeekend ? 'border-violet-100' : 'border-gray-100'}`}
+            >
+              {/* Day header row */}
+              <div className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-100 ${isWeekend ? 'bg-violet-50/60' : 'bg-gray-50/80'}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[13px] font-semibold ${isWeekend ? 'text-violet-700' : 'text-gray-800'}`}>
+                    {label}
+                  </span>
+                  {day.date && (
+                    <span className="text-[11px] text-gray-400">{day.date}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {eventCount > 0 && (
+                    <span className="text-[11px] text-gray-400">
+                      {eventCount} event{eventCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {day.energy && (
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${ENERGY_BADGE[day.energy.toLowerCase()] || 'bg-gray-100 text-gray-600'}`}>
+                      {day.energy}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Day body */}
+              <div className="px-4 py-3 space-y-1.5">
+                {/* Existing events (locked) */}
+                {events.map((ev, j) => (
+                  <div key={j} className="flex items-center gap-2.5">
+                    <div className="w-0.5 h-4 rounded-full bg-blue-300 shrink-0" />
+                    <span className="text-[12px] text-gray-600 leading-tight">
+                      {ev.time && <span className="text-gray-400 tabular-nums mr-1">{ev.time}</span>}
+                      {ev.title}
+                    </span>
+                  </div>
+                ))}
+
+                {/* Free evening indicator */}
+                {day.freeEvening && (
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-0.5 h-4 rounded-full bg-green-300 shrink-0" />
+                    <span className="text-[12px] text-green-600">Free evening</span>
+                  </div>
+                )}
+
+                {/* Activity suggestion */}
+                {day.suggestion && slotState !== 'dismissed' && (
+                  <SuggestionSlot
+                    suggestion={day.suggestion}
+                    state={slotState}
+                    onAction={(action) => setSlotStates(prev => ({ ...prev, [slotKey]: action }))}
+                  />
+                )}
+
+                {/* Empty day */}
+                {events.length === 0 && !day.freeEvening && !day.suggestion && (
+                  <p className="text-[12px] text-gray-300 italic py-0.5">Nothing scheduled</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Closing Soon section */}
+        {closingSoon.length > 0 && (
+          <div className="pt-1">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">
+              Closing Soon
+            </p>
+            <div className="space-y-2">
+              {closingSoon.map((item, i) => (
+                <div key={i} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-gray-800 truncate">{item.title}</p>
+                    {item.deadline && (
+                      <p className="text-[11px] text-amber-600 mt-0.5">Deadline: {item.deadline}</p>
+                    )}
+                  </div>
+                  <span className="text-xl shrink-0">⏰</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Bottom padding for safe area */}
+        <div className="h-4" />
+      </div>
+    </div>
+  );
+}
+
+function SummaryPill({ icon, value, label }: { icon: string; value: number; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xl leading-none">{icon}</span>
+      <div>
+        <p className="text-[20px] font-bold text-gray-900 leading-none">{value}</p>
+        <p className="text-[10px] text-gray-400 mt-0.5 leading-none">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function SuggestionSlot({
+  suggestion,
+  state,
+  onAction,
+}: {
+  suggestion: string;
+  state: SlotAction | undefined;
+  onAction: (action: SlotAction) => void;
+}) {
+  if (state === 'accepted') {
+    return (
+      <div className="flex items-center gap-2 mt-0.5 rounded-lg px-3 py-2 bg-green-50 border border-green-200">
+        <span className="text-green-500 text-[13px]">✓</span>
+        <p className="text-[12px] text-green-700 flex-1">{suggestion}</p>
+        <span className="text-[11px] text-green-500 font-medium shrink-0">Added</span>
+      </div>
+    );
+  }
+
+  if (state === 'swap') {
+    return (
+      <div className="flex items-center gap-2 mt-0.5 rounded-lg px-3 py-2 bg-amber-50 border border-amber-200">
+        <span className="text-amber-500 text-[13px]">↻</span>
+        <p className="text-[12px] text-amber-700 flex-1 italic">{suggestion}</p>
+        <span className="text-[11px] text-amber-500 font-medium shrink-0">Swapping…</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-0.5 rounded-lg px-3 py-2 bg-violet-50 border border-violet-100">
+      <div className="flex items-start gap-2">
+        <span className="text-[13px] mt-0.5 shrink-0">💡</span>
+        <p className="text-[12px] text-violet-700 flex-1 leading-snug">{suggestion}</p>
+      </div>
+      <div className="flex gap-1.5 mt-2">
+        <button
+          onClick={() => onAction('accepted')}
+          className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
+        >
+          Accept
+        </button>
+        <button
+          onClick={() => onAction('swap')}
+          className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+        >
+          Swap
+        </button>
+        <button
+          onClick={() => onAction('dismissed')}
+          className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
