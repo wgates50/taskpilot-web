@@ -13,6 +13,7 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
   const reason = data.reason ? String(data.reason) : null;
   const tags = (data.tags as string[]) || [];
   const url = data.url ? String(data.url) : null;
+  const inCalendar = Boolean(data.in_calendar);
 
   if (status === 'added') {
     return (
@@ -46,12 +47,18 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
 
       {/* Actions */}
       <div className="flex gap-2 mt-2.5">
-        <button
-          onClick={() => setStatus('added')}
-          className="flex-1 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-        >
-          Add to Calendar
-        </button>
+        {inCalendar ? (
+          <span className="flex-1 py-1.5 text-[12px] font-medium text-green-700 bg-green-50 rounded-lg text-center border border-green-200">
+            ✓ On your calendar
+          </span>
+        ) : (
+          <button
+            onClick={() => setStatus('added')}
+            className="flex-1 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+          >
+            Add to Calendar
+          </button>
+        )}
         <button
           onClick={() => setStatus('dismissed')}
           className="px-3 py-1.5 text-[12px] font-medium text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200"
