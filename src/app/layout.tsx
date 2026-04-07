@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -34,6 +35,7 @@ export default function RootLayout({
         <div className="mx-auto max-w-[430px] h-full bg-white shadow-xl relative overflow-hidden">
           {children}
         </div>
+        <SpeedInsights />
       </body>
     </html>
   );
