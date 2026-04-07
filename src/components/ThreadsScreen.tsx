@@ -185,10 +185,10 @@ function ThreadRow({ task, latest, unread, pinned, showMenu, onTap, onLongPress,
       >
         {/* Avatar */}
         <div
-          className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 relative"
+          className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 relative"
           style={{ backgroundColor: `${groupColor}12` }}
         >
-          <span role="img" aria-label={task.name}>{task.icon}</span>
+          <span className="text-[12px] font-semibold tracking-wide" style={{ color: groupColor }}>{task.icon}</span>
           <div
             className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
             style={{ backgroundColor: groupColor }}
@@ -199,7 +199,7 @@ function ThreadRow({ task, latest, unread, pinned, showMenu, onTap, onLongPress,
         <div className="flex-1 min-w-0 pt-0.5">
           <div className="flex items-baseline justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
-              {pinned && <span className="text-[11px] text-blue-500">&#x1F4CC;</span>}
+              {pinned && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
               <span className={`text-[15px] truncate ${unread > 0 ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
                 {task.name}
               </span>

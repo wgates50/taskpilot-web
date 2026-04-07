@@ -19,7 +19,7 @@ export const TASKS: TaskMeta[] = [
   {
     id: 'morning-brief',
     name: 'Morning Brief',
-    icon: '\u2600\uFE0F',
+    icon: 'MB',
     description: 'Daily smart morning brief \u2014 weather, calendar, What\u2019s On picks, work tasks, email scan',
     schedule: 'Every day at 6:00 AM',
     cronExpression: '0 6 * * *',
@@ -32,7 +32,7 @@ export const TASKS: TaskMeta[] = [
   {
     id: 'smart-reading-digest',
     name: 'Reading Digest',
-    icon: '\uD83D\uDCDA',
+    icon: 'RD',
     description: 'Daily lunchtime reading digest \u2014 newsletters, web search, adaptive click-tracking',
     schedule: 'Every day at 12:00 PM',
     cronExpression: '0 12 * * *',
@@ -40,12 +40,12 @@ export const TASKS: TaskMeta[] = [
     tier: 'main',
     dependencies: [],
     dependents: ['monthly-life-admin'],
-    quickReplies: ['\uD83D\uDC4D', '\uD83D\uDC4E', 'Save for later', 'More like this'],
+    quickReplies: ['Helpful', 'Skip', 'Save for later', 'More like this'],
   },
   {
     id: 'activity-suggester',
     name: 'Activity Suggester',
-    icon: '\uD83D\uDCA1',
+    icon: 'AS',
     description: 'Smart place suggestions based on weather, calendar, and taste profile',
     schedule: 'Every day at 8 AM & 4 PM',
     cronExpression: '0 8,16 * * *',
@@ -58,7 +58,7 @@ export const TASKS: TaskMeta[] = [
   {
     id: 'finance-tracker',
     name: 'Finance Tracker',
-    icon: '\uD83D\uDCB0',
+    icon: 'FT',
     description: 'Weekly finance summary \u2014 spending, categories, anomalies, savings',
     schedule: 'Sundays at 7 PM',
     cronExpression: '0 19 * * 0',
@@ -71,7 +71,7 @@ export const TASKS: TaskMeta[] = [
   {
     id: 'weekly-planner',
     name: 'Weekly Planner',
-    icon: '\uD83D\uDDD3\uFE0F',
+    icon: 'WP',
     description: 'Sunday evening week-ahead planner \u2014 calendar review, suggestions, Asana preview',
     schedule: 'Sundays at 2 PM',
     cronExpression: '0 14 * * 0',
@@ -84,7 +84,7 @@ export const TASKS: TaskMeta[] = [
   {
     id: 'job-alert-scanner',
     name: 'Job Alerts',
-    icon: '\uD83D\uDCBC',
+    icon: 'JA',
     description: 'Weekly job digest \u2014 data centre roles in LA/Austin',
     schedule: 'Sundays at 10 AM',
     cronExpression: '0 10 * * 0',
@@ -97,8 +97,8 @@ export const TASKS: TaskMeta[] = [
   // --- Background tasks ---
   {
     id: 'email-to-calendar',
-    name: 'Email \u2192 Calendar',
-    icon: '\uD83D\uDCE7',
+    name: 'Email → Calendar',
+    icon: 'EC',
     description: 'Daily morning email scan \u2014 finds events and tickets in Gmail, adds to calendar',
     schedule: 'Every day at 5 AM',
     cronExpression: '0 5 * * *',
@@ -111,7 +111,7 @@ export const TASKS: TaskMeta[] = [
   {
     id: 'weekly-london-event-scanner',
     name: 'Event Scanner',
-    icon: '\uD83C\uDFAD',
+    icon: 'ES',
     description: 'Weekly scan of London events \u2014 4-week horizon, added to What\u2019s On calendar',
     schedule: 'Wednesdays at 8 AM',
     cronExpression: '0 8 * * 3',
@@ -124,7 +124,7 @@ export const TASKS: TaskMeta[] = [
   {
     id: 'london-openings-scanner',
     name: 'London Openings',
-    icon: '\uD83C\uDF1F',
+    icon: 'LO',
     description: 'Weekly scan of new London openings \u2014 restaurants, cafes, retail, pop-ups',
     schedule: 'Tuesdays at 9 AM',
     cronExpression: '0 9 * * 2',
@@ -137,7 +137,7 @@ export const TASKS: TaskMeta[] = [
   {
     id: 'monthly-life-admin',
     name: 'Monthly Admin',
-    icon: '\uD83D\uDCCB',
+    icon: 'MA',
     description: 'Monthly life admin check-in \u2014 finance, events, reading, Vinted, subscriptions',
     schedule: '1st of each month at 10 AM',
     cronExpression: '0 10 1 * *',

@@ -124,10 +124,7 @@ export function ThreadDetail({ task, onBack }: Props) {
           &larr;
         </button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">{task.icon}</span>
-            <span className="font-semibold text-gray-900 truncate">{task.name}</span>
-          </div>
+          <span className="font-semibold text-gray-900 truncate">{task.name}</span>
           <p className="text-[11px] text-gray-400 mt-0.5">{task.schedule}</p>
         </div>
       </div>
@@ -212,6 +209,11 @@ export function ThreadDetail({ task, onBack }: Props) {
   );
 }
 
+// Strip emoji characters from strings so section headers never show emoji
+function stripEmojis(str: string): string {
+  return str.replace(/[\u{1F000}-\u{1FFFF}]|[\u{2300}-\u{27BF}]|\uFE0F/gu, '').trim();
+}
+
 function MessageBlockRenderer({ block, isUser }: {
   block: { type: string; data: Record<string, unknown> };
   isUser: boolean;
@@ -253,9 +255,9 @@ function MessageBlockRenderer({ block, isUser }: {
       return <EmailCard data={block.data} />;
     case 'section_header':
       return (
-        <div className="py-1.5">
-          <p className="text-[12px] font-semibold text-gray-500 uppercase tracking-wide">
-            {String(block.data.text)}
+        <div className="pt-3 pb-1">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
+            {stripEmojis(String(block.data.text))}
           </p>
         </div>
       );

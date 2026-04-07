@@ -129,7 +129,6 @@ export function WeeklyPlannerView({ task, onBack }: Props) {
       <button onClick={onBack} className="text-blue-600 text-lg font-medium leading-none">&larr;</button>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-lg">{task.icon}</span>
           <span className="font-semibold text-gray-900 truncate">{task.name}</span>
           {topEnergy && (
             <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${ENERGY_BADGE[topEnergy.toLowerCase()] || 'bg-gray-100 text-gray-600'}`}>
@@ -158,8 +157,7 @@ export function WeeklyPlannerView({ task, onBack }: Props) {
       <div className="flex flex-col h-full bg-gray-50">
         {header}
         <div className="flex flex-col items-center justify-center flex-1 gap-2 px-8 text-center">
-          <span className="text-4xl">📋</span>
-          <p className="text-gray-500 text-sm">No plan yet.</p>
+          <p className="text-gray-500 text-sm font-medium">No plan yet.</p>
           <p className="text-gray-400 text-[12px]">This task will post here on its next run — Sundays at 2 PM.</p>
         </div>
       </div>
@@ -172,11 +170,11 @@ export function WeeklyPlannerView({ task, onBack }: Props) {
 
       {/* Summary bar */}
       <div className="flex items-center gap-5 px-4 py-3 bg-white border-b shrink-0">
-        <SummaryPill icon="📅" value={totalEvents} label="this week" />
+        <SummaryPill value={totalEvents} label="this week" />
         <div className="w-px h-8 bg-gray-100" />
-        <SummaryPill icon="🌙" value={freeEvenings} label="free evenings" />
+        <SummaryPill value={freeEvenings} label="free evenings" />
         <div className="w-px h-8 bg-gray-100" />
-        <SummaryPill icon="☀️" value={freeWeekendSlots} label="free wknd slots" />
+        <SummaryPill value={freeWeekendSlots} label="free wknd slots" />
       </div>
 
       {/* Calendar grid */}
@@ -291,7 +289,7 @@ export function WeeklyPlannerView({ task, onBack }: Props) {
                       <p className="text-[11px] text-amber-600 mt-0.5">Deadline: {item.deadline}</p>
                     )}
                   </div>
-                  <span className="text-xl shrink-0">⏰</span>
+                  <span className="text-[10px] font-semibold text-amber-600 shrink-0 uppercase tracking-wide">Soon</span>
                 </div>
               ))}
             </div>
@@ -305,14 +303,11 @@ export function WeeklyPlannerView({ task, onBack }: Props) {
   );
 }
 
-function SummaryPill({ icon, value, label }: { icon: string; value: number; label: string }) {
+function SummaryPill({ value, label }: { value: number; label: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xl leading-none">{icon}</span>
-      <div>
-        <p className="text-[20px] font-bold text-gray-900 leading-none">{value}</p>
-        <p className="text-[10px] text-gray-400 mt-0.5 leading-none">{label}</p>
-      </div>
+    <div className="flex flex-col">
+      <p className="text-[20px] font-bold text-gray-900 leading-none">{value}</p>
+      <p className="text-[10px] text-gray-400 mt-0.5 leading-none">{label}</p>
     </div>
   );
 }
@@ -353,7 +348,7 @@ function SuggestionSlot({
   return (
     <div className="rounded-lg px-3 py-2 bg-violet-50 border border-violet-100">
       <div className="flex items-start gap-2">
-        <span className="text-[13px] mt-0.5 shrink-0">💡</span>
+        <div className="w-1 h-1 rounded-full bg-violet-400 mt-1.5 shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-[12px] font-medium text-violet-800 leading-snug">{suggestion.title}</p>
           {suggestion.venue && (

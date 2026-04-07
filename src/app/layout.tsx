@@ -3,7 +3,12 @@ import { Inter } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ['300', '400', '500', '600', '700'],
+  display: 'swap',
+  variable: '--font-sans',
+});
 
 export const metadata: Metadata = {
   title: "TaskPilot",
@@ -30,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.className} h-full antialiased`}>
+    <html lang="en" className={`${inter.variable} ${inter.className} h-full antialiased`}>
       <body className="h-full bg-gray-50">
         <div className="mx-auto max-w-[430px] h-full bg-white shadow-xl relative overflow-hidden">
           {children}

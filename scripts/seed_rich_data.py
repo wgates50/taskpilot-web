@@ -20,12 +20,12 @@ def post(task_id, blocks, ts=None):
 # MORNING BRIEF — matches real Telegram output from 7 Apr run
 # ============================================================
 post('morning-brief', [
-    {'type': 'header', 'data': {'text': 'Good morning, Will 🌤'}},
+    {'type': 'header', 'data': {'text': 'Good morning, Will'}},
     {'type': 'weather_card', 'data': {
         'temp': 12, 'condition': 'Scattered showers, windy',
         'high': 14, 'low': 8, 'rain_chance': 65
     }},
-    {'type': 'section_header', 'data': {'text': '📅 TODAY'}},
+    {'type': 'section_header', 'data': {'text': 'TODAY'}},
     {'type': 'text', 'data': {'text': 'One event tonight:'}},
     {'type': 'event_card', 'data': {
         'title': 'The Drama — Everyman Broadgate',
@@ -37,7 +37,7 @@ post('morning-brief', [
         'in_calendar': True,
         'map_url': 'https://www.google.com/maps/place/Everyman+Broadgate,+London'
     }},
-    {'type': 'section_header', 'data': {'text': "🎭 WHAT'S ON THIS WEEK"}},
+    {'type': 'section_header', 'data': {'text': "WHAT'S ON THIS WEEK"}},
     {'type': 'event_card', 'data': {
         'title': 'Back to the Future: The Musical — CLOSES SUNDAY',
         'venue': 'Adelphi Theatre, West End',
@@ -68,7 +68,7 @@ post('morning-brief', [
         'in_calendar': True,
         'map_url': "https://www.google.com/maps/search/Ely's+Yard+Hanbury+Street+E1"
     }},
-    {'type': 'section_header', 'data': {'text': '📌 BOOK AHEAD'}},
+    {'type': 'section_header', 'data': {'text': 'BOOK AHEAD'}},
     {'type': 'event_card', 'data': {
         'title': 'David Bowie Immersive Experience',
         'venue': 'Lightroom, Kings Cross',
@@ -90,17 +90,17 @@ post('morning-brief', [
         'url': 'https://www.timeout.com/london/restaurants',
         'map_url': 'https://www.google.com/maps/search/MA+NA+Restaurant+Mayfair+London'
     }},
-    {'type': 'section_header', 'data': {'text': '✅ ASANA'}},
+    {'type': 'section_header', 'data': {'text': 'ASANA'}},
     {'type': 'text', 'data': {'text': '1 overdue: CPH1 DICM (due 30 Mar). 5 tasks due Friday 10th — big deadline day.'}},
-    {'type': 'section_header', 'data': {'text': '📬 EMAIL HIGHLIGHTS'}},
+    {'type': 'section_header', 'data': {'text': 'EMAIL HIGHLIGHTS'}},
     {'type': 'email_card', 'data': {'items': [
-        {'sender': 'ODEON', 'subject': 'Dune Part Three — IMAX 70mm tickets on sale', 'icon': '🎬', 'action_label': 'Book', 'action_url': 'https://www.odeon.co.uk/', 'priority': 'high'},
-        {'sender': 'Amphora Wine', 'subject': 'Your ParcelShop delivery is waiting', 'summary': 'Ready to collect from your local pickup point', 'icon': '📦', 'action_label': 'Track', 'action_url': '#'},
-        {'sender': 'Google', 'subject': 'Your Takeout export expires 13 Apr', 'summary': 'Download your data before it expires in 6 days', 'icon': '⚠️', 'action_label': 'Download', 'action_url': 'https://takeout.google.com/', 'priority': 'high'},
-        {'sender': 'LinkedIn', 'subject': 'New message from data-centre recruiter', 'icon': '💼', 'action_label': 'View', 'action_url': 'https://www.linkedin.com/messaging/'},
-        {'sender': 'Pliability', 'subject': 'Your free trial ends tomorrow', 'summary': 'Cancel if you don\'t want to be charged £7.99/mo', 'icon': '🏋️', 'action_label': 'Manage', 'action_url': '#'}
+        {'sender': 'ODEON', 'subject': 'Dune Part Three — IMAX 70mm tickets on sale', 'action_label': 'Book', 'action_url': 'https://www.odeon.co.uk/', 'priority': 'high'},
+        {'sender': 'Amphora Wine', 'subject': 'Your ParcelShop delivery is waiting', 'summary': 'Ready to collect from your local pickup point', 'action_label': 'Track', 'action_url': '#'},
+        {'sender': 'Google', 'subject': 'Your Takeout export expires 13 Apr', 'summary': 'Download your data before it expires in 6 days', 'action_label': 'Download', 'action_url': 'https://takeout.google.com/', 'priority': 'high'},
+        {'sender': 'LinkedIn', 'subject': 'New message from data-centre recruiter', 'action_label': 'View', 'action_url': 'https://www.linkedin.com/messaging/'},
+        {'sender': 'Pliability', 'subject': 'Your free trial ends tomorrow', 'summary': 'Cancel if you don\'t want to be charged £7.99/mo', 'action_label': 'Manage', 'action_url': '#'}
     ]}},
-    {'type': 'text', 'data': {'text': 'Have a good one — enjoy The Drama tonight! 🎬'}}
+    {'type': 'text', 'data': {'text': 'Have a good one — enjoy The Drama tonight.'}}
 ], ts='2026-04-07T06:00:00.000Z')
 
 
@@ -108,7 +108,7 @@ post('morning-brief', [
 # EMAIL → CALENDAR
 # ============================================================
 post('email-to-calendar', [
-    {'type': 'header', 'data': {'text': '📧 Email scan complete'}},
+    {'type': 'header', 'data': {'text': 'Email scan complete'}},
     {'type': 'text', 'data': {'text': 'Scanned 10 recent emails. Found 1 calendar event and 4 informational items:'}},
     {'type': 'event_card', 'data': {
         'title': 'The Drama — Everyman Broadgate',
@@ -118,7 +118,7 @@ post('email-to-calendar', [
         'reason': 'Booking confirmation — seats C5 & C6',
         'in_calendar': True
     }},
-    {'type': 'section_header', 'data': {'text': '📋 OTHER EMAILS FLAGGED'}},
+    {'type': 'section_header', 'data': {'text': 'OTHER EMAILS FLAGGED'}},
     {'type': 'text', 'data': {'text': '• GitHub device verification (×2) — new login from Chrome on Mac\n• PayPal: payment £27.82 to Asana, Inc\n• Amphora Wine: ParcelShop delivery ready to collect\n• Google Takeout: your export expires 13 April — download before then'}},
     {'type': 'text', 'data': {'text': 'No new events to add. Next scan: tomorrow at 5 AM.'}}
 ], ts='2026-04-07T05:16:00.000Z')
@@ -127,7 +127,7 @@ post('email-to-calendar', [
 # READING DIGEST — from 7 Apr run
 # ============================================================
 post('smart-reading-digest', [
-    {'type': 'header', 'data': {'text': '📚 Your Daily Read — Tuesday, 7 April'}},
+    {'type': 'header', 'data': {'text': 'Your Daily Read — Tuesday, 7 April'}},
     {'type': 'text', 'data': {'text': '4 articles today — 2 from your regulars, 1 discovery pick, 1 deep read.'}},
     {'type': 'article_card', 'data': {
         'title': 'Amazon Deprioritizes Gulf Data Centre Regions as Iran War Deals Meaningful Damage',
@@ -161,7 +161,7 @@ post('smart-reading-digest', [
         'summary': "The three-term senator from Virginia says nobody's ready for what AI could do to us amid rapid advances. Deep dive on regulation, existential risk, and the Senate's approach.",
         'url': '#'
     }},
-    {'type': 'text', 'data': {'text': 'Happy lunching! 🌮'}}
+    {'type': 'text', 'data': {'text': 'Happy lunching!'}}
 ], ts='2026-04-07T12:02:00.000Z')
 
 
@@ -169,7 +169,7 @@ post('smart-reading-digest', [
 # ACTIVITY SUGGESTER — from 7 Apr run
 # ============================================================
 post('activity-suggester', [
-    {'type': 'header', 'data': {'text': '💡 Activity suggestion'}},
+    {'type': 'header', 'data': {'text': 'Activity suggestion'}},
     {'type': 'text', 'data': {'text': 'Scattered showers today, 12°C with wind — decent for a walk but keep a layer handy. Cinema at 8:30 PM so the evening is locked in.'}},
     {'type': 'event_card', 'data': {
         'title': 'Broadway Market — Tuesday stroll',
@@ -178,14 +178,14 @@ post('activity-suggester', [
         'tags': ['outdoor', 'food', 'free'],
         'reason': "Tomorrow is wide open and the market is great midweek when it's quieter"
     }},
-    {'type': 'text', 'data': {'text': "Otherwise: light week ahead — good time to explore somewhere new. The Camden Towpath walk from Londonist looked interesting 👀"}},
+    {'type': 'text', 'data': {'text': "Otherwise: light week ahead — good time to explore somewhere new. The Camden Towpath walk from Londonist looked interesting."}},
 ], ts='2026-04-07T08:03:00.000Z')
 
 # ============================================================
 # FINANCE TRACKER — from 5 Apr run (latest Sunday)
 # ============================================================
 post('finance-tracker', [
-    {'type': 'header', 'data': {'text': '💰 Weekly finance summary'}},
+    {'type': 'header', 'data': {'text': 'Weekly finance summary'}},
     {'type': 'finance_card', 'data': {
         'period': '30 MAR – 6 APR 2026',
         'totalSpend': 649.82,
@@ -203,11 +203,11 @@ post('finance-tracker', [
         ],
         'balance': 2463.73
     }},
-    {'type': 'section_header', 'data': {'text': '📝 NOTABLE TRANSACTIONS'}},
+    {'type': 'section_header', 'data': {'text': 'NOTABLE TRANSACTIONS'}},
     {'type': 'text', 'data': {'text': 'Duck and Waffle dinner (£141.13). Bristol trip spending (The Bristol Loaf, Cabot Circus parking, Harvey Nichols, Lovisa). Spotify renewed at £12.99. JustGiving donation to Crisis (£11.25). Vercel Pro domain charge (£9.85) — new subscription flagged.'}},
-    {'type': 'section_header', 'data': {'text': '💳 SAVINGS & INVESTMENTS'}},
+    {'type': 'section_header', 'data': {'text': 'SAVINGS & INVESTMENTS'}},
     {'type': 'text', 'data': {'text': 'Easy Saver: £44.40. Two JPMorgan transfers totalling £1,999.32 moved to investments this week. Savings pot balance low after the investment move.'}},
-    {'type': 'section_header', 'data': {'text': '🔄 RECURRING'}},
+    {'type': 'section_header', 'data': {'text': 'RECURRING'}},
     {'type': 'text', 'data': {'text': 'Spotify (£12.99), Pliability (£7.99 — trial ending), Vercel Pro (£9.85 — new). All direct debits paid on schedule.'}},
 ], ts='2026-04-06T19:02:00.000Z')
 
@@ -216,7 +216,7 @@ post('finance-tracker', [
 # WEEKLY PLANNER — from 5 Apr run
 # ============================================================
 post('weekly-planner', [
-    {'type': 'header', 'data': {'text': '🗓️ Week ahead: 7–13 April'}},
+    {'type': 'header', 'data': {'text': 'Week ahead: 7–13 April'}},
     {'type': 'calendar_preview', 'data': {
         'week_label': '7–13 April',
         'busyness': 'low',
@@ -256,9 +256,9 @@ post('weekly-planner', [
             ]}
         ]
     }},
-    {'type': 'section_header', 'data': {'text': '⚠️ DEADLINES & OVERDUE'}},
+    {'type': 'section_header', 'data': {'text': 'DEADLINES & OVERDUE'}},
     {'type': 'text', 'data': {'text': '1 overdue: CPH1 DICM (due 30 Mar — 8 days late). 5 tasks due Friday 10th — biggest cluster of the week.'}},
-    {'type': 'section_header', 'data': {'text': '🏛️ CLOSING SOON'}},
+    {'type': 'section_header', 'data': {'text': 'CLOSING SOON'}},
     {'type': 'event_card', 'data': {
         'title': 'Rose Wylie — Royal Academy',
         'venue': 'Royal Academy of Arts',
@@ -273,15 +273,15 @@ post('weekly-planner', [
         'tags': ['musical', 'closing', 'urgent'],
         'reason': 'Final performances this weekend'
     }},
-    {'type': 'text', 'data': {'text': 'Very light week — just the cinema Tuesday and flea market Sunday. Plenty of free evenings to play with. 💡 Wednesday evening Event Scanner runs this week — might surface some mid-week picks worth adding.'}}
+    {'type': 'text', 'data': {'text': 'Very light week — just the cinema Tuesday and flea market Sunday. Plenty of free evenings to play with. Wednesday evening Event Scanner runs this week — might surface some mid-week picks worth adding.'}}
 ], ts='2026-04-06T14:06:00.000Z')
 
 # ============================================================
 # JOB ALERTS — from 5 Apr run
 # ============================================================
 post('job-alert-scanner', [
-    {'type': 'header', 'data': {'text': '💼 Weekly job digest'}},
-    {'type': 'section_header', 'data': {'text': '🎯 TIER 1 — DIRECT MATCHES'}},
+    {'type': 'header', 'data': {'text': 'Weekly job digest'}},
+    {'type': 'section_header', 'data': {'text': 'TIER 1 — DIRECT MATCHES'}},
     {'type': 'job_card', 'data': {
         'title': 'Manager, Data Center Land Development & Portfolio Management',
         'company': 'Google',
@@ -312,7 +312,7 @@ post('job-alert-scanner', [
         'posted': '3 Apr',
         'url': '#'
     }},
-    {'type': 'section_header', 'data': {'text': '🔶 TIER 2 — ADJACENT ROLES'}},
+    {'type': 'section_header', 'data': {'text': 'TIER 2 — ADJACENT ROLES'}},
     {'type': 'job_card', 'data': {
         'title': 'Regional Lead, DC Site Acquisition — South Central',
         'company': 'Meta',
@@ -333,9 +333,9 @@ post('job-alert-scanner', [
         'posted': '4 Apr',
         'url': '#'
     }},
-    {'type': 'section_header', 'data': {'text': '🏢 COMPANIES TO WATCH'}},
+    {'type': 'section_header', 'data': {'text': 'COMPANIES TO WATCH'}},
     {'type': 'text', 'data': {'text': '• Digital Realty — check internal mobility portal (your current employer)\n• Equinix — LA campus expansion hiring soon\n• CoreWeave — Austin office opening, DC buildout team forming'}},
-    {'type': 'section_header', 'data': {'text': '📊 MARKET SIGNAL'}},
+    {'type': 'section_header', 'data': {'text': 'MARKET SIGNAL'}},
     {'type': 'text', 'data': {'text': 'Amazon AWS has unusually high volume of DC real estate development hiring right now. Austin-San Antonio corridor projected to double its 1.7GW data centre capacity within two years. Good time to position.'}},
     {'type': 'text', 'data': {'text': '5 Tier 1 matches, 3 Tier 2 adjacent, 3 companies to watch. Quiet week overall — market may be cooling post-Easter.'}}
 ], ts='2026-04-06T10:02:00.000Z')
@@ -344,7 +344,7 @@ post('job-alert-scanner', [
 # LONDON OPENINGS — from 6 Apr / latest run
 # ============================================================
 post('london-openings-scanner', [
-    {'type': 'header', 'data': {'text': '🌟 New London openings'}},
+    {'type': 'header', 'data': {'text': 'New London openings'}},
     {'type': 'event_card', 'data': {
         'title': 'Brick Lane Flea Market',
         'venue': "Ely's Yard, Hanbury Street, E1 6QR",
@@ -378,8 +378,8 @@ post('london-openings-scanner', [
 # EVENT SCANNER — from 2 Apr / latest Wednesday run
 # ============================================================
 post('weekly-london-event-scanner', [
-    {'type': 'header', 'data': {'text': '🦊 London events — 4-week scan'}},
-    {'type': 'section_header', 'data': {'text': '🔥 THIS WEEK (7–13 Apr)'}},
+    {'type': 'header', 'data': {'text': 'London events — 4-week scan'}},
+    {'type': 'section_header', 'data': {'text': 'THIS WEEK (7–13 Apr)'}},
     {'type': 'event_card', 'data': {
         'title': 'Belle & Sebastian',
         'venue': 'Royal Albert Hall',
@@ -405,7 +405,7 @@ post('weekly-london-event-scanner', [
         'url': 'https://www.phonox.co.uk/',
         'map_url': 'https://www.google.com/maps/place/Phonox,+Brixton,+London'
     }},
-    {'type': 'section_header', 'data': {'text': '📅 NEXT WEEK (14–20 Apr)'}},
+    {'type': 'section_header', 'data': {'text': 'NEXT WEEK (14–20 Apr)'}},
     {'type': 'event_card', 'data': {
         'title': 'David Bowie Immersive Experience',
         'venue': 'Lightroom, Kings Cross',
@@ -426,7 +426,7 @@ post('weekly-london-event-scanner', [
         'url': 'https://www.timeout.com/london/restaurants',
         'map_url': 'https://www.google.com/maps/search/MA+NA+Restaurant+Mayfair+London'
     }},
-    {'type': 'section_header', 'data': {'text': '⏰ CLOSING SOON'}},
+    {'type': 'section_header', 'data': {'text': 'CLOSING SOON'}},
     {'type': 'event_card', 'data': {
         'title': 'Rose Wylie — Royal Academy',
         'venue': 'Royal Academy of Arts',
@@ -444,4 +444,4 @@ post('weekly-london-event-scanner', [
     {'type': 'text', 'data': {'text': '8 events across 4 weeks. 2 added to What\'s On calendar. Next scan: Wednesday 8 April at 8 AM.'}}
 ], ts='2026-04-02T08:16:00.000Z')
 
-print('\n✅ All threads populated.')
+print('\nAll threads populated.')

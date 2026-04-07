@@ -46,34 +46,6 @@ function isClosingSoon(dateStr: string): boolean {
          lower.includes('last') || lower.includes('final');
 }
 
-// Category icon mapping
-const CATEGORY_ICONS: Record<string, string> = {  restaurant: '🍽️',
-  gig: '🎵',
-  music: '🎵',
-  exhibition: '🎨',
-  immersive: '🌀',
-  market: '🛍️',
-  cinema: '🎬',
-  opening: '✨',
-  pub: '🍺',
-  theatre: '🎭',
-  musical: '🎭',
-  nightlife: '🌙',
-  art: '🎨',
-};
-
-function getCategoryIcon(category?: string, tags?: string[]): string {
-  if (category && CATEGORY_ICONS[category.toLowerCase()]) {
-    return CATEGORY_ICONS[category.toLowerCase()];
-  }
-  if (tags) {
-    for (const tag of tags) {
-      const icon = CATEGORY_ICONS[tag.toLowerCase()];
-      if (icon) return icon;
-    }
-  }
-  return '📍';
-}
 
 function getMapUrl(venue: string, mapUrl?: string): string {
   if (mapUrl) return mapUrl;
@@ -94,10 +66,8 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
   const url = d.url || d.booking_url || null;
   const inCalendar = Boolean(d.in_calendar);
   const imageUrl = d.image_url || null;
-  const category = d.category || null;
   const mapUrl = d.map_url || null;
 
-  const catIcon = getCategoryIcon(category || undefined, tags);
   const canAddToCalendar = hasSpecificDate(date) && !inCalendar;
   const closing = isClosingSoon(date);
   const mapsLink = venue ? getMapUrl(venue, mapUrl || undefined) : null;
@@ -128,7 +98,6 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
           <div className="flex-1 min-w-0">
             {tags.length > 0 && (
               <div className="flex gap-1 mb-1.5 flex-wrap">
-                <span className="text-sm leading-none">{catIcon}</span>
                 {tags.map(tag => (
                   <span key={tag} className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
                     tag.toLowerCase().includes('urgent') || tag.toLowerCase().includes('closing')
@@ -168,9 +137,6 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
             )}
             {/* Date / time / price row */}
             <div className="flex items-center gap-1.5 mt-0.5">
-              {closing && (
-                <span className="text-[10px] font-bold text-red-600">⏰</span>
-              )}
               <p className={`text-[12px] ${closing ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                 {date}{time ? ` · ${time}` : ''}{price ? ` · ${price}` : ''}
               </p>

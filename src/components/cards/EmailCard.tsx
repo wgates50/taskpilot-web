@@ -22,7 +22,6 @@ export function EmailCard({ data }: { data: Record<string, unknown> }) {
     <div className="space-y-1.5">
       {items.map((item, i) => {
         if (dismissed.has(i)) return null;
-        const icon = item.icon || '📧';
         const isPriority = item.priority === 'high';
 
         return (
@@ -30,7 +29,7 @@ export function EmailCard({ data }: { data: Record<string, unknown> }) {
             isPriority ? 'border-amber-200' : 'border-gray-100'
           }`}>
             <div className="flex items-start gap-2.5">
-              <span className="text-base leading-none mt-0.5 shrink-0">{icon}</span>
+              {isPriority && <div className="w-1 h-1 rounded-full bg-amber-500 shrink-0 mt-2" />}
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] text-gray-400 font-medium">{item.sender}</p>
                 <p className="text-[13px] font-medium text-gray-800 leading-snug mt-0.5">{item.subject}</p>
