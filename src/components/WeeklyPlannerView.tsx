@@ -8,6 +8,16 @@ interface CalendarEvent {
   time?: string;
 }
 
+interface Suggestion {
+  title: string;
+  venue?: string;
+  reason?: string;
+  url?: string;
+  map_url?: string;
+  category?: string;
+  tags?: string[];
+}
+
 interface DayData {
   label?: string;
   day?: string;
@@ -16,6 +26,7 @@ interface DayData {
   energy?: string;
   freeEvening?: boolean;
   suggestion?: string;
+  suggestions?: Suggestion[];
 }
 
 interface ClosingSoonItem {
@@ -228,17 +239,36 @@ export function WeeklyPlannerView({ task, onBack }: Props) {
                   </div>
                 )}
 
-                {/* Activity suggestion */}
-                {day.suggestion && slotState !== 'dismissed' && (
+                {/* Activity suggestions (multiple) */}
+                {day.suggestions && day.suggestions.length > 0 && (
+                  <div className="space-y-1.5 mt-1">
+                    {day.suggestions.map((sug, k) => {
+                      const sugKey = `day-${i}-sug-${k}`;
+                      const sugState = slotStates[sugKey];
+                      if (sugState === 'dismissed') return null;
+                      return (
+                        <SuggestionSlot
+                          key={k}
+                          suggestion={sug}
+                          state={sugState}
+                          onAction={(action) => setSlotStates(prev => ({ ...prev, [sugKey]: action }))}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Legacy single suggestion */}
+                {!day.suggestions?.length && day.suggestion && slotState !== 'dismissed' && (
                   <SuggestionSlot
-                    suggestion={day.suggestion}
+                    suggestion={{ title: day.suggestion }}
                     state={slotState}
                     onAction={(action) => setSlotStates(prev => ({ ...prev, [slotKey]: action }))}
                   />
                 )}
 
                 {/* Empty day */}
-                {events.length === 0 && !day.freeEvening && !day.suggestion && (
+                {events.length === 0 && !day.freeEvening && !day.suggestion && !day.suggestions?.length && (
                   <p className="text-[12px] text-gray-300 italic py-0.5">Nothing scheduled</p>
                 )}
               </div>
@@ -292,15 +322,19 @@ function SuggestionSlot({
   state,
   onAction,
 }: {
-  suggestion: string;
+  suggestion: Suggestion;
   state: SlotAction | undefined;
   onAction: (action: SlotAction) => void;
 }) {
+  const mapLink = suggestion.map_url || (suggestion.venue
+    ? `https://www.google.com/maps/search/${encodeURIComponent(suggestion.venue)}`
+    : null);
+
   if (state === 'accepted') {
     return (
-      <div className="flex items-center gap-2 mt-0.5 rounded-lg px-3 py-2 bg-green-50 border border-green-200">
+      <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-green-50 border border-green-200">
         <span className="text-green-500 text-[13px]">✓</span>
-        <p className="text-[12px] text-green-700 flex-1">{suggestion}</p>
+        <p className="text-[12px] text-green-700 flex-1">{suggestion.title}</p>
         <span className="text-[11px] text-green-500 font-medium shrink-0">Added</span>
       </div>
     );
@@ -308,19 +342,40 @@ function SuggestionSlot({
 
   if (state === 'swap') {
     return (
-      <div className="flex items-center gap-2 mt-0.5 rounded-lg px-3 py-2 bg-amber-50 border border-amber-200">
+      <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-amber-50 border border-amber-200">
         <span className="text-amber-500 text-[13px]">↻</span>
-        <p className="text-[12px] text-amber-700 flex-1 italic">{suggestion}</p>
+        <p className="text-[12px] text-amber-700 flex-1 italic">{suggestion.title}</p>
         <span className="text-[11px] text-amber-500 font-medium shrink-0">Swapping…</span>
       </div>
     );
   }
 
   return (
-    <div className="mt-0.5 rounded-lg px-3 py-2 bg-violet-50 border border-violet-100">
+    <div className="rounded-lg px-3 py-2 bg-violet-50 border border-violet-100">
       <div className="flex items-start gap-2">
         <span className="text-[13px] mt-0.5 shrink-0">💡</span>
-        <p className="text-[12px] text-violet-700 flex-1 leading-snug">{suggestion}</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] font-medium text-violet-800 leading-snug">{suggestion.title}</p>
+          {suggestion.venue && (
+            <div className="flex items-center gap-1 mt-0.5">
+              {mapLink ? (
+                <a href={mapLink} target="_blank" rel="noopener noreferrer"
+                  className="text-[11px] text-violet-500 hover:text-violet-700 flex items-center gap-0.5">
+                  <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {suggestion.venue}
+                </a>
+              ) : (
+                <span className="text-[11px] text-violet-500">{suggestion.venue}</span>
+              )}
+            </div>
+          )}
+          {suggestion.reason && (
+            <p className="text-[11px] text-violet-500 mt-0.5 italic">{suggestion.reason}</p>
+          )}
+        </div>
       </div>
       <div className="flex gap-1.5 mt-2">
         <button
@@ -329,17 +384,17 @@ function SuggestionSlot({
         >
           Accept
         </button>
-        <button
-          onClick={() => onAction('swap')}
-          className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
-        >
-          Swap
-        </button>
+        {suggestion.url && (
+          <a href={suggestion.url} target="_blank" rel="noopener noreferrer"
+            className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors">
+            Info
+          </a>
+        )}
         <button
           onClick={() => onAction('dismissed')}
           className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
         >
-          Dismiss
+          Skip
         </button>
       </div>
     </div>

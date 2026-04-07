@@ -8,6 +8,7 @@ import { FinanceCard } from './cards/FinanceCard';
 import { WeatherCard } from './cards/WeatherCard';
 import { CalendarPreviewCard } from './cards/CalendarPreviewCard';
 import { JobCard } from './cards/JobCard';
+import { EmailCard } from './cards/EmailCard';
 import { WeeklyPlannerView } from './WeeklyPlannerView';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -248,6 +249,8 @@ function MessageBlockRenderer({ block, isUser }: {
       return <CalendarPreviewCard data={block.data} />;
     case 'job_card':
       return <JobCard data={block.data} />;
+    case 'email_card':
+      return <EmailCard data={block.data} />;
     case 'section_header':
       return (
         <div className="py-1.5">

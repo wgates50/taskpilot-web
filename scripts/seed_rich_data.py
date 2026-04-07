@@ -32,8 +32,10 @@ post('morning-brief', [
         'venue': 'Everyman Broadgate, London',
         'date': 'Tonight, 7 Apr', 'time': '8:30 PM',
         'tags': ['cinema', 'confirmed'],
+        'category': 'cinema',
         'reason': 'Seats C5 & C6 booked',
-        'in_calendar': True
+        'in_calendar': True,
+        'map_url': 'https://www.google.com/maps/place/Everyman+Broadgate,+London'
     }},
     {'type': 'section_header', 'data': {'text': "🎭 WHAT'S ON THIS WEEK"}},
     {'type': 'event_card', 'data': {
@@ -61,8 +63,10 @@ post('morning-brief', [
         'venue': "Ely's Yard, Hanbury Street, E1 6QR",
         'date': 'Saturday 12 Apr',
         'tags': ['vintage', 'market', 'new'],
+        'category': 'market',
         'reason': 'Grand opening — curated vintage homeware, mid-century modern',
-        'in_calendar': True
+        'in_calendar': True,
+        'map_url': "https://www.google.com/maps/search/Ely's+Yard+Hanbury+Street+E1"
     }},
     {'type': 'section_header', 'data': {'text': '📌 BOOK AHEAD'}},
     {'type': 'event_card', 'data': {
@@ -89,7 +93,13 @@ post('morning-brief', [
     {'type': 'section_header', 'data': {'text': '✅ ASANA'}},
     {'type': 'text', 'data': {'text': '1 overdue: CPH1 DICM (due 30 Mar). 5 tasks due Friday 10th — big deadline day.'}},
     {'type': 'section_header', 'data': {'text': '📬 EMAIL HIGHLIGHTS'}},
-    {'type': 'text', 'data': {'text': 'Dune Part Three IMAX 70mm tickets now on sale. Amphora ParcelShop delivery waiting. Google Takeout export expires 13 Apr. LinkedIn message from data-centre recruiter. Pliability free trial ending tomorrow.'}},
+    {'type': 'email_card', 'data': {'items': [
+        {'sender': 'ODEON', 'subject': 'Dune Part Three — IMAX 70mm tickets on sale', 'icon': '🎬', 'action_label': 'Book', 'action_url': 'https://www.odeon.co.uk/', 'priority': 'high'},
+        {'sender': 'Amphora Wine', 'subject': 'Your ParcelShop delivery is waiting', 'summary': 'Ready to collect from your local pickup point', 'icon': '📦', 'action_label': 'Track', 'action_url': '#'},
+        {'sender': 'Google', 'subject': 'Your Takeout export expires 13 Apr', 'summary': 'Download your data before it expires in 6 days', 'icon': '⚠️', 'action_label': 'Download', 'action_url': 'https://takeout.google.com/', 'priority': 'high'},
+        {'sender': 'LinkedIn', 'subject': 'New message from data-centre recruiter', 'icon': '💼', 'action_label': 'View', 'action_url': 'https://www.linkedin.com/messaging/'},
+        {'sender': 'Pliability', 'subject': 'Your free trial ends tomorrow', 'summary': 'Cancel if you don\'t want to be charged £7.99/mo', 'icon': '🏋️', 'action_label': 'Manage', 'action_url': '#'}
+    ]}},
     {'type': 'text', 'data': {'text': 'Have a good one — enjoy The Drama tonight! 🎬'}}
 ], ts='2026-04-07T06:00:00.000Z')
 
@@ -211,13 +221,39 @@ post('weekly-planner', [
         'week_label': '7–13 April',
         'busyness': 'low',
         'days': [
-            {'day': 'Mon', 'events': ['Book Mitsu London (reminder)'], 'free_evening': True, 'suggestion': 'The Horsemen — new pub opening at Broadgate, right by your office'},
-            {'day': 'Tue', 'events': ['8:30 PM — The Drama, Everyman Broadgate'], 'free_evening': False},
-            {'day': 'Wed', 'events': [], 'free_evening': True, 'suggestion': 'Belle & Sebastian at Royal Albert Hall — standout gig this week'},
-            {'day': 'Thu', 'events': [], 'free_evening': True, 'suggestion': 'Bossman Mamak (new Malaysian, Soho) or Barbican Soundtrack Fest'},
-            {'day': 'Fri', 'events': ['5 Asana tasks due'], 'free_evening': True, 'suggestion': 'Louie Vega at Phonox or BFI Idol Worship screening'},
-            {'day': 'Sat', 'events': [], 'free_evening': True, 'suggestion': 'Flea London at Hackney Bridge — vintage and food stalls'},
-            {'day': 'Sun', 'events': ['Brick Lane Flea Market (all day)'], 'free_evening': True, 'suggestion': 'Giant London Flea at Hackney Wick also on — double flea market Sunday'}
+            {'day': 'Mon 7', 'events': [{'title': 'Book Mitsu London', 'time': 'reminder'}], 'free_evening': True, 'suggestions': [
+                {'title': 'The Horsemen', 'venue': 'Broadgate, EC2', 'reason': 'New pub — right by your office, perfect first visit', 'category': 'pub', 'map_url': 'https://www.google.com/maps/search/The+Horsemen+Broadgate+London'},
+                {'title': 'Dalston Roof Park', 'venue': 'Dalston', 'reason': 'Sunny forecast — rooftop drinks while the weather holds', 'category': 'bar', 'map_url': 'https://www.google.com/maps/search/Dalston+Roof+Park'},
+                {'title': 'Viktor Wynd Museum', 'venue': 'Mare Street, Hackney', 'reason': 'Quirky evening out — open late on Mondays', 'category': 'museum', 'url': 'https://www.theviktorwyndmuseum.com/'}
+            ]},
+            {'day': 'Tue 8', 'events': [{'title': 'The Drama — Everyman Broadgate', 'time': '8:30 PM'}], 'free_evening': False, 'suggestions': [
+                {'title': 'Towpath Cafe', 'venue': "Regent's Canal", 'reason': 'Sunny lunchtime walk + coffee before cinema tonight', 'category': 'cafe', 'map_url': 'https://www.google.com/maps/search/Towpath+Cafe+Regents+Canal'}
+            ]},
+            {'day': 'Wed 9', 'events': [], 'free_evening': True, 'suggestions': [
+                {'title': 'Belle & Sebastian', 'venue': 'Royal Albert Hall', 'reason': 'Indie legends — highlight of the week', 'category': 'gig', 'url': 'https://www.royalalberthall.com/', 'map_url': 'https://www.google.com/maps/place/Royal+Albert+Hall'},
+                {'title': 'E Pellicci + Broadway Market', 'venue': 'Bethnal Green → London Fields', 'reason': 'Classic Full English then an evening stroll', 'category': 'cafe'},
+                {'title': "Fitzgerald's at Broadgate", 'venue': 'Broadgate Circle', 'reason': 'New American bistro — try the burger', 'category': 'restaurant'}
+            ]},
+            {'day': 'Thu 10', 'events': [], 'free_evening': True, 'suggestions': [
+                {'title': 'Bossman Mamak', 'venue': 'Soho', 'reason': 'New Malaysian — strong reviews, matches your taste', 'category': 'restaurant', 'url': 'https://www.timeout.com/london/restaurants'},
+                {'title': 'Barbican Soundtrack Fest', 'venue': 'Barbican Centre', 'reason': 'Film scores performed live — one-night-only', 'category': 'music', 'map_url': 'https://www.google.com/maps/place/Barbican+Centre'},
+                {'title': 'The Spurstowe', 'venue': 'Dalston', 'reason': 'Casual Thursday pint — good beer garden', 'category': 'pub'}
+            ]},
+            {'day': 'Fri 11', 'events': [{'title': '5 Asana tasks due', 'time': 'all day'}], 'free_evening': True, 'suggestions': [
+                {'title': 'Louie Vega', 'venue': 'Phonox, Brixton', 'reason': 'House legend — great Friday night option', 'category': 'nightlife', 'url': 'https://www.phonox.co.uk/', 'map_url': 'https://www.google.com/maps/place/Phonox+Brixton'},
+                {'title': 'BFI Idol Worship screening', 'venue': 'BFI Southbank', 'reason': 'Classic film on the big screen', 'category': 'cinema', 'map_url': 'https://www.google.com/maps/place/BFI+Southbank'},
+                {'title': 'Brilliant Corners', 'venue': 'Dalston', 'reason': 'Wind down with vinyl and cocktails', 'category': 'bar', 'map_url': 'https://www.google.com/maps/search/Brilliant+Corners+Dalston'}
+            ]},
+            {'day': 'Sat 12', 'events': [], 'free_evening': True, 'suggestions': [
+                {'title': 'Flea London at Hackney Bridge', 'venue': 'Hackney Wick', 'reason': 'Vintage + street food — all-day market', 'category': 'market', 'map_url': 'https://www.google.com/maps/search/Hackney+Bridge+London'},
+                {'title': 'Columbia Road Flower Market', 'venue': 'Shoreditch', 'reason': 'Morning flowers then brunch at Jolene', 'category': 'market', 'map_url': 'https://www.google.com/maps/place/Columbia+Road+Flower+Market'},
+                {'title': 'Hackney Marshes run', 'venue': 'Hackney Marshes', 'reason': 'Morning jog if sunny — good start to the weekend', 'category': 'outdoor'}
+            ]},
+            {'day': 'Sun 13', 'events': [{'title': 'Brick Lane Flea Market', 'time': 'all day'}], 'free_evening': True, 'suggestions': [
+                {'title': 'Giant London Flea', 'venue': 'Hackney Wick', 'reason': 'Double flea market Sunday — both worth hitting', 'category': 'market'},
+                {'title': 'Netil Market', 'venue': 'London Fields', 'reason': 'Smaller, calmer — good for lunch after Brick Lane', 'category': 'market', 'map_url': 'https://www.google.com/maps/search/Netil+Market+London+Fields'},
+                {'title': 'Rose Wylie at Royal Academy', 'venue': 'Royal Academy of Arts', 'reason': 'Closes next week — last chance', 'category': 'exhibition', 'url': 'https://www.royalacademy.org.uk/'}
+            ]}
         ]
     }},
     {'type': 'section_header', 'data': {'text': '⚠️ DEADLINES & OVERDUE'}},
