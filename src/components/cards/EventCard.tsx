@@ -2,79 +2,257 @@
 
 import { useState } from 'react';
 
-export function EventCard({ data }: { data: Record<string, unknown> }) {
-  const [status, setStatus] = useState<'idle' | 'added' | 'dismissed'>('idle');
+interface EventData {
+  title?: string;
+  venue?: string;
+  date?: string;
+  time?: string;
+  price?: string;
+  reason?: string;
+  tags?: string[];
+  url?: string;
+  in_calendar?: boolean;
+  image_url?: string;
+  category?: string;
+  map_url?: string;
+  booking_url?: string;
+}
 
-  const title = String(data.title || '');
-  const venue = String(data.venue || '');
-  const date = String(data.date || '');
-  const time = data.time ? String(data.time) : null;
-  const price = data.price ? String(data.price) : null;
-  const reason = data.reason ? String(data.reason) : null;
-  const tags = (data.tags as string[]) || [];
-  const url = data.url ? String(data.url) : null;
-  const inCalendar = Boolean(data.in_calendar);
+// Determine if the date string represents a specific bookable date
+function hasSpecificDate(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const lower = dateStr.toLowerCase();
+  // Vague dates — don't show "Add to Calendar"
+  const vague = [
+    'just on sale', 'on sale', 'opens mid', 'open now',
+    'coming soon', 'tba', 'tbd', 'date tbc',
+  ];
+  if (vague.some(v => lower.includes(v))) return false;
+  // Specific patterns — show "Add to Calendar"
+  const specific = [
+    /\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
+    /tonight/i, /today/i, /tomorrow/i,
+    /(mon|tue|wed|thu|fri|sat|sun)\w*\s+\d/i,
+    /from\s+\d/i,
+  ];
+  return specific.some(p => p.test(lower));
+}
 
-  if (status === 'added') {
-    return (
-      <div className="bg-green-50 rounded-2xl px-3.5 py-3 shadow-sm border border-green-200">
-        <p className="text-[13px] text-green-700 font-medium">Added to calendar</p>
-      </div>
-    );
+// Determine if date indicates urgency (closing soon)
+function isClosingSoon(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const lower = dateStr.toLowerCase();
+  return lower.includes('closes') || lower.includes('closing') ||
+         lower.includes('last') || lower.includes('final');
+}
+
+// Category icon mapping
+const CATEGORY_ICONS: Record<string, string> = {  restaurant: '🍽️',
+  gig: '🎵',
+  music: '🎵',
+  exhibition: '🎨',
+  immersive: '🌀',
+  market: '🛍️',
+  cinema: '🎬',
+  opening: '✨',
+  pub: '🍺',
+  theatre: '🎭',
+  musical: '🎭',
+  nightlife: '🌙',
+  art: '🎨',
+};
+
+function getCategoryIcon(category?: string, tags?: string[]): string {
+  if (category && CATEGORY_ICONS[category.toLowerCase()]) {
+    return CATEGORY_ICONS[category.toLowerCase()];
   }
-  if (status === 'dismissed') return null;
+  if (tags) {
+    for (const tag of tags) {
+      const icon = CATEGORY_ICONS[tag.toLowerCase()];
+      if (icon) return icon;
+    }
+  }
+  return '📍';
+}
 
+function getMapUrl(venue: string, mapUrl?: string): string {
+  if (mapUrl) return mapUrl;
+  return `https://www.google.com/maps/search/${encodeURIComponent(venue)}`;
+}
+export function EventCard({ data }: { data: Record<string, unknown> }) {
+  const [saved, setSaved] = useState(false);
+  const [calAdded, setCalAdded] = useState(false);
+
+  const d = data as unknown as EventData;
+  const title = d.title || '';
+  const venue = d.venue || '';
+  const date = d.date || '';
+  const time = d.time || null;
+  const price = d.price || null;
+  const reason = d.reason || null;
+  const tags = d.tags || [];
+  const url = d.url || d.booking_url || null;
+  const inCalendar = Boolean(d.in_calendar);
+  const imageUrl = d.image_url || null;
+  const category = d.category || null;
+  const mapUrl = d.map_url || null;
+
+  const catIcon = getCategoryIcon(category || undefined, tags);
+  const canAddToCalendar = hasSpecificDate(date) && !inCalendar;
+  const closing = isClosingSoon(date);
+  const mapsLink = venue ? getMapUrl(venue, mapUrl || undefined) : null;
   return (
-    <div className="bg-white rounded-2xl px-3.5 py-3 shadow-sm border border-gray-100">
-      {/* Tags */}
-      {tags.length > 0 && (
-        <div className="flex gap-1 mb-1.5 flex-wrap">
-          {tags.map(tag => (
-            <span key={tag} className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">
-              {tag}
+    <div className={`rounded-2xl shadow-sm border overflow-hidden ${
+      closing ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100 bg-white'
+    }`}>
+      {/* Image banner */}
+      {imageUrl && (
+        <div className="relative h-32 bg-gray-100">
+          <img
+            src={imageUrl}
+            alt={title}
+            className="w-full h-full object-cover"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+          {inCalendar && (
+            <span className="absolute top-2 right-2 text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-500 text-white shadow-sm">
+              ✓ On calendar
             </span>
-          ))}
+          )}
         </div>
       )}
 
-      <p className="text-[14px] font-semibold text-gray-900">{title}</p>
-      <p className="text-[12px] text-gray-500 mt-0.5">{venue}</p>
-      <p className="text-[12px] text-gray-500">{date}{time ? ` \u00B7 ${time}` : ''}{price ? ` \u00B7 ${price}` : ''}</p>
+      <div className="px-3.5 py-3">
+        {/* Top row: category icon + tags + calendar badge (if no image) */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            {tags.length > 0 && (
+              <div className="flex gap-1 mb-1.5 flex-wrap">
+                <span className="text-sm leading-none">{catIcon}</span>
+                {tags.map(tag => (
+                  <span key={tag} className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                    tag.toLowerCase().includes('urgent') || tag.toLowerCase().includes('closing')
+                      ? 'bg-red-50 text-red-700'
+                      : tag.toLowerCase().includes('new')
+                      ? 'bg-violet-50 text-violet-700'
+                      : 'bg-amber-50 text-amber-700'
+                  }`}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* Title */}
+            <p className="text-[14px] font-semibold text-gray-900 leading-snug">{title}</p>
 
-      {reason && (
-        <p className="text-[11px] text-blue-600 mt-1.5 italic">{reason}</p>
-      )}
+            {/* Venue with map link */}
+            {venue && (
+              <div className="flex items-center gap-1 mt-0.5">
+                {mapsLink ? (
+                  <a
+                    href={mapsLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[12px] text-gray-500 hover:text-blue-600 flex items-center gap-1"
+                  >
+                    <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    {venue}
+                  </a>
+                ) : (
+                  <p className="text-[12px] text-gray-500">{venue}</p>
+                )}
+              </div>
+            )}
+            {/* Date / time / price row */}
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {closing && (
+                <span className="text-[10px] font-bold text-red-600">⏰</span>
+              )}
+              <p className={`text-[12px] ${closing ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                {date}{time ? ` · ${time}` : ''}{price ? ` · ${price}` : ''}
+              </p>
+            </div>
 
-      {/* Actions */}
-      <div className="flex gap-2 mt-2.5">
-        {inCalendar ? (
-          <span className="flex-1 py-1.5 text-[12px] font-medium text-green-700 bg-green-50 rounded-lg text-center border border-green-200">
-            ✓ On your calendar
-          </span>
-        ) : (
+            {/* Reason / recommendation */}
+            {reason && (
+              <p className="text-[11px] text-blue-600 mt-1.5 italic leading-snug">{reason}</p>
+            )}
+          </div>
+
+          {/* Calendar badge (when no image) */}
+          {!imageUrl && inCalendar && (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 whitespace-nowrap shrink-0 mt-0.5">
+              ✓ On calendar
+            </span>
+          )}
+        </div>
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 mt-2.5">
+          {/* Add to Calendar — only when there's a specific date */}
+          {canAddToCalendar && !calAdded && (
+            <button
+              onClick={() => setCalAdded(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              {date}{time ? ` · ${time}` : ''}
+            </button>
+          )}
+          {calAdded && (
+            <span className="flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium text-green-700 bg-green-50 rounded-lg border border-green-200">
+              ✓ Added to calendar
+            </span>
+          )}
+
+          {/* Save for later */}
           <button
-            onClick={() => setStatus('added')}
-            className="flex-1 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            onClick={() => setSaved(!saved)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-medium rounded-lg transition-colors ${
+              saved
+                ? 'text-blue-700 bg-blue-100'
+                : 'text-gray-500 bg-gray-100 hover:bg-gray-200'
+            }`}
           >
-            Add to Calendar
+            <svg className="w-3.5 h-3.5" fill={saved ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            {saved ? 'Saved' : 'Save'}
           </button>
-        )}
-        <button
-          onClick={() => setStatus('dismissed')}
-          className="px-3 py-1.5 text-[12px] font-medium text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200"
-        >
-          Dismiss
-        </button>
-        {url && (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 text-[12px] font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
-          >
-            Link
-          </a>
-        )}
+          {/* External link */}
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Link
+            </a>
+          )}
+
+          {/* Map link (icon only, when no venue link already shown) */}
+          {mapsLink && !venue && (
+            <a
+              href={mapsLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center px-2 py-1.5 text-[12px] text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
