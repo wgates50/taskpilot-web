@@ -48,9 +48,9 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
       {/* Actions */}
       <div className="flex gap-2 mt-2.5">
         {inCalendar ? (
-          <div className="flex-1 py-1.5 text-[12px] font-medium text-green-700 bg-green-50 rounded-lg text-center border border-green-200">
+          <span className="flex-1 py-1.5 text-[12px] font-medium text-green-700 bg-green-50 rounded-lg text-center border border-green-200">
             ✓ On your calendar
-          </div>
+          </span>
         ) : (
           <button
             onClick={() => setStatus('added')}
