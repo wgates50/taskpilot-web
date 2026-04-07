@@ -8,6 +8,7 @@ import { FinanceCard } from './cards/FinanceCard';
 import { WeatherCard } from './cards/WeatherCard';
 import { CalendarPreviewCard } from './cards/CalendarPreviewCard';
 import { JobCard } from './cards/JobCard';
+import { WeeklyPlannerView } from './WeeklyPlannerView';
 import { v4 as uuidv4 } from 'uuid';
 
 interface MessageRow {
@@ -24,6 +25,13 @@ interface Props {
 }
 
 export function ThreadDetail({ task, onBack }: Props) {
+  if (task.id === 'weekly-planner') {
+    return <WeeklyPlannerView task={task} onBack={onBack} />;
+  }
+  return <ThreadDetailInner task={task} onBack={onBack} />;
+}
+
+function ThreadDetailInner({ task, onBack }: Props) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
