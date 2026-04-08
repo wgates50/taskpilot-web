@@ -215,9 +215,11 @@ export function ThreadDetail({ task, onBack }: Props) {
 }
 
 function MessageBlockRenderer({ block, isUser }: {
-  block: { type: string; data: Record<string, unknown> };
+  block: { type: string; data?: Record<string, unknown> };
   isUser: boolean;
 }) {
+  if (!block.data) return null;
+
   if (isUser && block.type === 'text') {
     return (
       <div className="bg-blue-600 text-white rounded-2xl rounded-br-md px-3.5 py-2 text-[14px]">

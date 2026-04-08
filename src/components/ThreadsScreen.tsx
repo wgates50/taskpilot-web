@@ -36,15 +36,16 @@ function getRelativeTime(isoString: string): string {
 }
 
 function getMessagePreview(blocks: unknown[]): string {
-  for (const block of blocks as Array<{ type: string; data: Record<string, unknown> }>) {
-    if (block.type === 'text') return String(block.data.text).split('\n')[0].slice(0, 80);
-    if (block.type === 'header') return String(block.data.text).slice(0, 80);
-    if (block.type === 'weather_card') return `${block.data.conditions}, ${block.data.temp}\u00B0C`;
-    if (block.type === 'event_card') return String(block.data.title);
-    if (block.type === 'article_card') return String(block.data.title);
-    if (block.type === 'finance_card') return `\u00A3${Number(block.data.totalSpend).toFixed(0)} spent this week`;
+  for (const block of blocks as Array<{ type: string; data?: Record<string, unknown> }>) {
+    if (!block.data) continue;
+    if (block.type === 'text') return String(block.data.text ?? '').split('\n')[0].slice(0, 80);
+    if (block.type === 'header') return String(block.data.text ?? '').slice(0, 80);
+    if (block.type === 'weather_card') return `${block.data.conditions ?? ''}, ${block.data.temp ?? ''}°C`;
+    if (block.type === 'event_card') return String(block.data.title ?? '');
+    if (block.type === 'article_card') return String(block.data.title ?? '');
+    if (block.type === 'finance_card') return `£${Number(block.data.totalSpend ?? 0).toFixed(0)} spent this week`;
     if (block.type === 'calendar_preview') return 'Week preview';
-    if (block.type === 'job_card') return String(block.data.title || block.data.role);
+    if (block.type === 'job_card') return String(block.data.title || block.data.role || '');
   }
   return 'New message';
 }
