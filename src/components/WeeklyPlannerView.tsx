@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 
 interface MessageRow {
   id: string;
@@ -22,10 +22,8 @@ interface PlannerEvent {
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
-/**
- * Parse a date string and return the JS day index (0=Sun … 6=Sat).
- * Handles "Monday", "Mon", "2026-04-08", etc.
- */
+/* ── helpers ────────────────────────────────────────────────────── */
+
 function parseDayIndex(raw: string): number | null {
   const lower = raw.toLowerCase().trim();
   const map: Record<string, number> = {
@@ -39,16 +37,10 @@ function parseDayIndex(raw: string): number | null {
   return null;
 }
 
-/** Convert JS day (0=Sun) to our Mon-first index (0=Mon … 6=Sun). */
 function toMonFirst(jsDay: number): number {
   return jsDay === 0 ? 6 : jsDay - 1;
 }
 
-/**
- * Walk every message block and extract events keyed by Mon-first day index.
- * Supports: event_card, calendar_preview (with days[]), and any block with
- * a recognisable date/day + title.
- */
 function extractEvents(messages: MessageRow[]): Map<number, PlannerEvent[]> {
   const buckets = new Map<number, PlannerEvent[]>();
   for (let i = 0; i < 7; i++) buckets.set(i, []);
@@ -57,7 +49,6 @@ function extractEvents(messages: MessageRow[]): Map<number, PlannerEvent[]> {
     for (const block of msg.blocks) {
       const d = block.data;
 
-      // --- event_card blocks ---
       if (block.type === 'event_card' && d.date) {
         const idx = parseDayIndex(String(d.date));
         if (idx !== null) {
@@ -71,7 +62,6 @@ function extractEvents(messages: MessageRow[]): Map<number, PlannerEvent[]> {
         }
       }
 
-      // --- calendar_preview blocks (days array) ---
       if (block.type === 'calendar_preview' && Array.isArray(d.days)) {
         for (const day of d.days as Array<Record<string, unknown>>) {
           const label = String(day.label || day.day || '');
@@ -80,7 +70,6 @@ function extractEvents(messages: MessageRow[]): Map<number, PlannerEvent[]> {
           const monIdx = toMonFirst(idx);
 
           if (typeof day.events === 'number') {
-            // Compact format — synthesise a summary event
             buckets.get(monIdx)!.push({
               title: `${day.events} event${day.events === 1 ? '' : 's'}`,
               date: label,
@@ -114,6 +103,18 @@ function extractEvents(messages: MessageRow[]): Map<number, PlannerEvent[]> {
   return buckets;
 }
 
+/* ── energy badge colours ──────────────────────────────────────── */
+
+const ENERGY_STYLE: Record<string, string> = {
+  high: 'bg-red-100 text-red-700',
+  packed: 'bg-red-100 text-red-700',
+  medium: 'bg-amber-100 text-amber-700',
+  balanced: 'bg-green-100 text-green-700',
+  low: 'bg-green-100 text-green-700',
+};
+
+/* ── component ─────────────────────────────────────────────────── */
+
 interface Props {
   messages: MessageRow[];
   loading: boolean;
@@ -121,10 +122,9 @@ interface Props {
 
 export function WeeklyPlannerView({ messages, loading }: Props) {
   const todayMonIdx = toMonFirst(new Date().getDay());
-
   const buckets = useMemo(() => extractEvents(messages), [messages]);
 
-  // Build the current week's date strings (Mon–Sun)
+  /* Week dates for the header (e.g. "7 Apr") */
   const weekDates = useMemo(() => {
     const now = new Date();
     const jsDay = now.getDay();
@@ -132,95 +132,120 @@ export function WeeklyPlannerView({ messages, loading }: Props) {
     return DAY_LABELS.map((_, i) => {
       const d = new Date(now);
       d.setDate(now.getDate() + mondayOffset + i);
-      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      return d.getDate();
     });
   }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+      <div className="flex items-center justify-center flex-1 text-gray-400 text-sm">
         Loading planner…
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-3 py-4">
-      {/* Grid: single column on mobile, 7 cols on lg */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2">
-        {DAY_LABELS.map((label, i) => {
-          const isToday = i === todayMonIdx;
-          const events = buckets.get(i) || [];
+    <div className="flex-1 overflow-hidden flex flex-col">
+      {/* ── Desktop: 7-column grid  ·  Mobile: horizontal scroll ── */}
+      <div className="flex-1 overflow-x-auto overflow-y-auto px-3 py-4">
+        <div
+          className="grid gap-2 h-full"
+          style={{
+            gridTemplateColumns: 'repeat(7, minmax(150px, 1fr))',
+          }}
+        >
+          {DAY_LABELS.map((label, i) => {
+            const isToday = i === todayMonIdx;
+            const events = buckets.get(i) || [];
 
-          return (
-            <div
-              key={label}
-              className={`rounded-2xl border p-3 min-h-[120px] transition-colors ${
-                isToday
-                  ? 'bg-blue-50 border-blue-200'
-                  : 'bg-white border-gray-100'
-              }`}
-            >
-              {/* Day header */}
-              <div className="flex items-baseline justify-between mb-2">
-                <span
-                  className={`text-[13px] font-semibold ${
-                    isToday ? 'text-blue-700' : 'text-gray-700'
-                  }`}
-                >
-                  {label}
-                </span>
-                <span className="text-[11px] text-gray-400">{weekDates[i]}</span>
-              </div>
-
-              {/* Event cards */}
-              {events.length === 0 ? (
-                <p className="text-[11px] text-gray-300 italic">No events</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {events.map((ev, j) => (
-                    <div
-                      key={j}
-                      className={`rounded-lg px-2.5 py-1.5 shadow-sm text-[12px] ${
-                        ev.suggestion
-                          ? 'bg-violet-50 border border-violet-200'
-                          : 'bg-gray-50 border border-gray-100'
-                      }`}
-                    >
-                      {ev.time && (
-                        <p className="text-[10px] font-medium text-blue-600">{ev.time}</p>
-                      )}
-                      <p className="font-medium text-gray-900 leading-tight">{ev.title}</p>
-                      {ev.venue && (
-                        <p className="text-[10px] text-gray-500 mt-0.5">{ev.venue}</p>
-                      )}
-                      {ev.tags && ev.tags.length > 0 && (
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          {ev.tags.map(tag => (
-                            <span key={tag} className="text-[9px] px-1 py-0.5 rounded-full bg-amber-50 text-amber-700">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {ev.energy && (
-                        <span className={`inline-block mt-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
-                          ev.energy.toLowerCase() === 'high' || ev.energy.toLowerCase() === 'packed'
-                            ? 'bg-red-100 text-red-700'
-                            : ev.energy.toLowerCase() === 'medium'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-green-100 text-green-700'
-                        }`}>
-                          {ev.energy}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+            return (
+              <div
+                key={label}
+                className={`rounded-2xl border flex flex-col min-h-[180px] transition-colors ${
+                  isToday
+                    ? 'bg-blue-50/60 border-blue-300 ring-1 ring-blue-200'
+                    : 'bg-white border-gray-200'
+                }`}
+              >
+                {/* Day header */}
+                <div className={`px-3 py-2.5 border-b ${
+                  isToday ? 'border-blue-200' : 'border-gray-100'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[22px] font-bold leading-none ${
+                      isToday ? 'text-blue-600' : 'text-gray-800'
+                    }`}>
+                      {weekDates[i]}
+                    </span>
+                    <span className={`text-[13px] font-medium ${
+                      isToday ? 'text-blue-500' : 'text-gray-400'
+                    }`}>
+                      {label}
+                    </span>
+                    {isToday && (
+                      <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                        Today
+                      </span>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {/* Events list */}
+                <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+                  {events.length === 0 ? (
+                    <p className="text-[12px] text-gray-300 text-center mt-4">—</p>
+                  ) : (
+                    events.map((ev, j) => (
+                      <div
+                        key={j}
+                        className={`rounded-xl px-3 py-2 text-[13px] ${
+                          ev.suggestion
+                            ? 'bg-violet-50 border border-violet-200'
+                            : isToday
+                            ? 'bg-white border border-blue-100 shadow-sm'
+                            : 'bg-gray-50 border border-gray-100'
+                        }`}
+                      >
+                        {ev.time && (
+                          <p className="text-[11px] font-semibold text-blue-600 mb-0.5">
+                            {ev.time}
+                          </p>
+                        )}
+                        <p className="font-semibold text-gray-900 leading-snug">
+                          {ev.title}
+                        </p>
+                        {ev.venue && (
+                          <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
+                            {ev.venue}
+                          </p>
+                        )}
+                        {ev.tags && ev.tags.length > 0 && (
+                          <div className="flex gap-1 mt-1.5 flex-wrap">
+                            {ev.tags.map(tag => (
+                              <span
+                                key={tag}
+                                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {ev.energy && (
+                          <span className={`inline-block mt-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                            ENERGY_STYLE[ev.energy.toLowerCase()] || 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {ev.energy}
+                          </span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
