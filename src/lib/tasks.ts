@@ -8,11 +8,12 @@ export interface TaskMeta {
   description: string;
   schedule: string;
   cronExpression: string;
-  group: 'calendar' | 'reading' | 'finance' | 'career';
+  group: 'calendar' | 'reading' | 'finance' | 'career' | 'activity';
   tier: 'main' | 'background';
   dependencies: string[];
   dependents: string[];
   quickReplies: string[];
+  retired?: boolean;
 }
 
 export const TASKS: TaskMeta[] = [
@@ -20,12 +21,12 @@ export const TASKS: TaskMeta[] = [
     id: 'morning-brief',
     name: 'Morning Brief',
     icon: '\u2600\uFE0F',
-    description: 'Daily smart morning brief \u2014 weather, calendar, What\u2019s On picks, work tasks, email scan',
+    description: 'Daily smart morning brief \u2014 weather, calendar, activity picks, work tasks, email scan',
     schedule: 'Every day at 6:00 AM',
     cronExpression: '0 6 * * *',
     group: 'calendar',
     tier: 'main',
-    dependencies: ['email-to-calendar', 'weekly-london-event-scanner', 'london-openings-scanner'],
+    dependencies: ['email-to-calendar', 'daily-activity-engine', 'data-sync-engine'],
     dependents: [],
     quickReplies: ['Add to calendar', 'Not interested', 'Already booked', 'Tell me more'],
   },
@@ -43,17 +44,17 @@ export const TASKS: TaskMeta[] = [
     quickReplies: ['\uD83D\uDC4D', '\uD83D\uDC4E', 'Save for later', 'More like this'],
   },
   {
-    id: 'activity-suggester',
-    name: 'Activity Suggester',
-    icon: '\uD83D\uDCA1',
-    description: 'Smart place suggestions based on weather, calendar, and taste profile',
-    schedule: 'Every day at 8 AM & 4 PM',
-    cronExpression: '0 8,16 * * *',
-    group: 'calendar',
+    id: 'daily-activity-engine',
+    name: 'Activity Engine',
+    icon: '\u2728',
+    description: 'Daily activity suggestions — scores places + events using weather, calendar, location, companions',
+    schedule: 'Every day at 2:00 AM',
+    cronExpression: '0 2 * * *',
+    group: 'activity',
     tier: 'main',
-    dependencies: ['weekly-london-event-scanner', 'london-openings-scanner'],
-    dependents: [],
-    quickReplies: ['Sounds good!', 'Not today', 'Save for weekend', 'Show on map'],
+    dependencies: ['data-sync-engine'],
+    dependents: ['morning-brief', 'weekly-planner'],
+    quickReplies: ['Sounds good!', 'Not today', 'Save for weekend', 'Show alternatives'],
   },
   {
     id: 'finance-tracker',
@@ -72,12 +73,12 @@ export const TASKS: TaskMeta[] = [
     id: 'weekly-planner',
     name: 'Weekly Planner',
     icon: '\uD83D\uDDD3\uFE0F',
-    description: 'Sunday evening week-ahead planner \u2014 calendar review, suggestions, Asana preview',
+    description: 'Sunday evening week-ahead planner \u2014 calendar review, activity engine suggestions, Asana preview',
     schedule: 'Sundays at 2 PM',
     cronExpression: '0 14 * * 0',
     group: 'calendar',
     tier: 'main',
-    dependencies: ['weekly-london-event-scanner', 'london-openings-scanner', 'email-to-calendar'],
+    dependencies: ['daily-activity-engine', 'data-sync-engine', 'email-to-calendar'],
     dependents: [],
     quickReplies: ['Looks good', 'Too busy', 'Add suggestion', 'Move event'],
   },
@@ -109,17 +110,30 @@ export const TASKS: TaskMeta[] = [
     quickReplies: ['Undo', 'Confirm', 'Wrong calendar', 'Looks good'],
   },
   {
-    id: 'weekly-london-event-scanner',
-    name: 'Event Scanner',
-    icon: '\uD83C\uDFAD',
-    description: 'Weekly scan of London events \u2014 4-week horizon, added to What\u2019s On calendar',
-    schedule: 'Wednesdays at 8 AM',
-    cronExpression: '0 8 * * 3',
-    group: 'calendar',
+    id: 'data-sync-engine',
+    name: 'Data Sync',
+    icon: '\uD83D\uDD04',
+    description: 'Weekly sync — Google Maps import, enrichment, event scan, Notion \u2194 Postgres sync',
+    schedule: 'Sundays at midnight',
+    cronExpression: '0 0 * * 0',
+    group: 'activity',
     tier: 'background',
     dependencies: [],
-    dependents: ['morning-brief', 'activity-suggester', 'weekly-planner'],
-    quickReplies: ['Add to calendar', 'Not interested', 'Looks great'],
+    dependents: ['daily-activity-engine', 'morning-brief', 'weekly-planner'],
+    quickReplies: ['Show new places', 'Show new events', 'Sync stats'],
+  },
+  {
+    id: 'visit-review',
+    name: 'Visit Review',
+    icon: '\uD83D\uDCCB',
+    description: 'Weekly check-in — did you visit these places? Mark as liked to re-suggest',
+    schedule: 'Fridays at 7 PM',
+    cronExpression: '0 19 * * 5',
+    group: 'activity',
+    tier: 'background',
+    dependencies: ['daily-activity-engine'],
+    dependents: [],
+    quickReplies: ['Visited', 'Didn\'t go', 'Go again'],
   },
   {
     id: 'london-openings-scanner',
@@ -153,6 +167,7 @@ export const TASK_MAP = Object.fromEntries(TASKS.map(t => [t.id, t]));
 
 export const TASK_GROUPS: Record<string, { name: string; color: string }> = {
   calendar: { name: 'Calendar Pipeline', color: '#3B82F6' },
+  activity: { name: 'Activity Engine', color: '#EC4899' },
   reading: { name: 'Reading Pipeline', color: '#8B5CF6' },
   finance: { name: 'Finance Pipeline', color: '#10B981' },
   career: { name: 'Career', color: '#F59E0B' },

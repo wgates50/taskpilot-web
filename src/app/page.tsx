@@ -3,13 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ThreadsScreen } from '@/components/ThreadsScreen';
 import { ThreadDetail } from '@/components/ThreadDetail';
+import { PlanningScreen } from '@/components/PlanningScreen';
 import { DashboardScreen } from '@/components/DashboardScreen';
 import { ProfileScreen } from '@/components/ProfileScreen';
-import { SavedItemsScreen } from '@/components/SavedItemsScreen';
-import { SavedItemsProvider } from '@/lib/SavedItemsContext';
 import { TASKS, type TaskMeta } from '@/lib/tasks';
 
-type Tab = 'threads' | 'saved' | 'dashboard' | 'profile';
+type Tab = 'threads' | 'planning' | 'dashboard' | 'profile';
 
 export interface LatestMessage {
   id: string;
@@ -122,65 +121,61 @@ export default function Home() {
 
   if (selectedTask) {
     return (
-      <SavedItemsProvider>
-        <ThreadDetail
-          task={selectedTask}
-          onBack={() => {
-            setSelectedTask(null);
-            fetchLatest();
-          }}
-        />
-      </SavedItemsProvider>
+      <ThreadDetail
+        task={selectedTask}
+        onBack={() => {
+          setSelectedTask(null);
+          fetchLatest();
+        }}
+      />
     );
   }
 
   return (
-    <SavedItemsProvider>
-      <div className="flex flex-col h-full">
-        <div className="flex-1 overflow-y-auto">
-          {tab === 'threads' && (
-            <ThreadsScreen
-              latestMessages={latestMessages}
-              unreads={unreads}
-              pins={pins}
-              onOpenThread={openThread}
-              onTogglePin={togglePin}
-            />
-          )}
-          {tab === 'saved' && <SavedItemsScreen />}
-          {tab === 'dashboard' && <DashboardScreen />}
-          {tab === 'profile' && <ProfileScreen />}
-        </div>
-
-        {/* Tab bar */}
-        <nav className="flex items-center justify-around border-t bg-white/95 backdrop-blur-lg px-2 pb-5 pt-2 shrink-0">
-          {[
-            { id: 'threads' as Tab, label: 'Threads', icon: <ThreadsIcon />, badge: totalUnread },
-            { id: 'saved' as Tab, label: 'Saved', icon: <SavedIcon /> },
-            { id: 'dashboard' as Tab, label: 'Dashboard', icon: <DashboardIcon /> },
-            { id: 'profile' as Tab, label: 'Profile', icon: <ProfileIcon /> },
-          ].map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex flex-col items-center gap-0.5 px-4 py-1 relative ${
-                tab === t.id ? 'text-blue-600' : 'text-gray-400'
-              }`}
-            >
-              <div className="relative">
-                {t.icon}
-                {t.badge !== undefined && t.badge > 0 && (
-                  <span className="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
-                    {t.badge > 9 ? '9+' : t.badge}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] font-medium">{t.label}</span>
-            </button>
-          ))}
-        </nav>
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto">
+        {tab === 'threads' && (
+          <ThreadsScreen
+            latestMessages={latestMessages}
+            unreads={unreads}
+            pins={pins}
+            onOpenThread={openThread}
+            onTogglePin={togglePin}
+          />
+        )}
+        {tab === 'planning' && <PlanningScreen />}
+        {tab === 'dashboard' && <DashboardScreen />}
+        {tab === 'profile' && <ProfileScreen />}
       </div>
-    </SavedItemsProvider>
+
+      {/* Tab bar */}
+      <nav className="flex items-center justify-around border-t bg-white/95 backdrop-blur-lg px-2 pb-5 pt-2 shrink-0">
+        {[
+          { id: 'threads' as Tab, label: 'Threads', icon: <ThreadsIcon />, badge: totalUnread },
+          { id: 'planning' as Tab, label: 'Planning', icon: <PlanningIcon /> },
+          { id: 'dashboard' as Tab, label: 'Dashboard', icon: <DashboardIcon /> },
+          { id: 'profile' as Tab, label: 'Profile', icon: <ProfileIcon /> },
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex flex-col items-center gap-0.5 px-4 py-1 relative ${
+              tab === t.id ? 'text-blue-600' : 'text-gray-400'
+            }`}
+          >
+            <div className="relative">
+              {t.icon}
+              {t.badge !== undefined && t.badge > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {t.badge > 9 ? '9+' : t.badge}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-medium">{t.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
   );
 }
 
@@ -192,10 +187,10 @@ function ThreadsIcon() {
   );
 }
 
-function SavedIcon() {
+function PlanningIcon() {
   return (
     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z" />
     </svg>
   );
 }

@@ -215,9 +215,432 @@ export async function deleteSavedItem(id: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+// ── Places ────────────────────────────────────────────────
+
+export interface PlaceRow {
+  id: string;
+  notion_page_id: string | null;
+  name: string;
+  category: string;
+  subcategory: string;
+  cuisine_tags: string[];
+  area: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  google_maps_url: string | null;
+  website: string | null;
+  google_rating: number | null;
+  vibe_tags: string[];
+  time_tags: string[];
+  weather_tags: string[];
+  social_tags: string[];
+  day_tags: string[];
+  season_tags: string[];
+  price_tier: string | null;
+  booking_type: string | null;
+  duration: string | null;
+  opening_hours: unknown;
+  notes: string | null;
+  times_suggested: number;
+  times_accepted: number;
+  times_dismissed: number;
+  times_visited: number;
+  last_suggested: string | null;
+  last_visited: string | null;
+  liked: boolean;
+  source: string;
+  google_place_id: string | null;
+  enriched_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getPlaces(filters?: {
+  category?: string;
+  area?: string;
+  enriched?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<PlaceRow[]> {
+  const limit = filters?.limit || 100;
+  const offset = filters?.offset || 0;
+
+  if (filters?.category) {
+    const result = await sql`
+      SELECT * FROM places WHERE category = ${filters.category}
+      ORDER BY name LIMIT ${limit} OFFSET ${offset}
+    `;
+    return result.rows as PlaceRow[];
+  }
+  if (filters?.area) {
+    const result = await sql`
+      SELECT * FROM places WHERE area = ${filters.area}
+      ORDER BY name LIMIT ${limit} OFFSET ${offset}
+    `;
+    return result.rows as PlaceRow[];
+  }
+  if (filters?.enriched === false) {
+    const result = await sql`
+      SELECT * FROM places WHERE enriched_at IS NULL
+      ORDER BY name LIMIT ${limit} OFFSET ${offset}
+    `;
+    return result.rows as PlaceRow[];
+  }
+  const result = await sql`
+    SELECT * FROM places ORDER BY name LIMIT ${limit} OFFSET ${offset}
+  `;
+  return result.rows as PlaceRow[];
+}
+
+export async function getPlace(id: string): Promise<PlaceRow | null> {
+  const result = await sql`SELECT * FROM places WHERE id = ${id} LIMIT 1`;
+  return (result.rows[0] as PlaceRow) || null;
+}
+
+export async function upsertPlace(place: Partial<PlaceRow> & { id: string; name: string }): Promise<PlaceRow> {
+  const result = await sql`
+    INSERT INTO places (
+      id, notion_page_id, name, category, subcategory, cuisine_tags,
+      area, address, lat, lng, google_maps_url, website, google_rating,
+      vibe_tags, time_tags, weather_tags, social_tags, day_tags, season_tags,
+      price_tier, booking_type, duration, opening_hours, notes,
+      times_suggested, times_accepted, times_dismissed, times_visited,
+      last_suggested, last_visited, liked, source, google_place_id, enriched_at
+    ) VALUES (
+      ${place.id}, ${place.notion_page_id || null}, ${place.name},
+      ${place.category || 'Uncategorised'}, ${place.subcategory || 'Other'},
+      ${JSON.stringify(place.cuisine_tags || [])},
+      ${place.area || null}, ${place.address || null},
+      ${place.lat || null}, ${place.lng || null},
+      ${place.google_maps_url || null}, ${place.website || null},
+      ${place.google_rating || null},
+      ${JSON.stringify(place.vibe_tags || [])},
+      ${JSON.stringify(place.time_tags || [])},
+      ${JSON.stringify(place.weather_tags || [])},
+      ${JSON.stringify(place.social_tags || [])},
+      ${JSON.stringify(place.day_tags || [])},
+      ${JSON.stringify(place.season_tags || [])},
+      ${place.price_tier || null}, ${place.booking_type || null},
+      ${place.duration || null},
+      ${place.opening_hours ? JSON.stringify(place.opening_hours) : null},
+      ${place.notes || null},
+      ${place.times_suggested || 0}, ${place.times_accepted || 0},
+      ${place.times_dismissed || 0}, ${place.times_visited || 0},
+      ${place.last_suggested || null}, ${place.last_visited || null},
+      ${place.liked || false}, ${place.source || 'google-maps'},
+      ${place.google_place_id || null}, ${place.enriched_at || null}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      notion_page_id = COALESCE(EXCLUDED.notion_page_id, places.notion_page_id),
+      name = EXCLUDED.name,
+      category = EXCLUDED.category,
+      subcategory = EXCLUDED.subcategory,
+      cuisine_tags = EXCLUDED.cuisine_tags,
+      area = COALESCE(EXCLUDED.area, places.area),
+      address = COALESCE(EXCLUDED.address, places.address),
+      lat = COALESCE(EXCLUDED.lat, places.lat),
+      lng = COALESCE(EXCLUDED.lng, places.lng),
+      google_maps_url = COALESCE(EXCLUDED.google_maps_url, places.google_maps_url),
+      website = COALESCE(EXCLUDED.website, places.website),
+      google_rating = COALESCE(EXCLUDED.google_rating, places.google_rating),
+      vibe_tags = EXCLUDED.vibe_tags,
+      time_tags = EXCLUDED.time_tags,
+      weather_tags = EXCLUDED.weather_tags,
+      social_tags = EXCLUDED.social_tags,
+      day_tags = EXCLUDED.day_tags,
+      season_tags = EXCLUDED.season_tags,
+      price_tier = COALESCE(EXCLUDED.price_tier, places.price_tier),
+      booking_type = COALESCE(EXCLUDED.booking_type, places.booking_type),
+      duration = COALESCE(EXCLUDED.duration, places.duration),
+      opening_hours = COALESCE(EXCLUDED.opening_hours, places.opening_hours),
+      notes = COALESCE(EXCLUDED.notes, places.notes),
+      source = EXCLUDED.source,
+      google_place_id = COALESCE(EXCLUDED.google_place_id, places.google_place_id),
+      enriched_at = COALESCE(EXCLUDED.enriched_at, places.enriched_at),
+      updated_at = NOW()
+    RETURNING *
+  `;
+  return result.rows[0] as PlaceRow;
+}
+
+export async function updatePlaceScoring(
+  id: string,
+  updates: Partial<Pick<PlaceRow, 'times_suggested' | 'times_accepted' | 'times_dismissed' | 'times_visited' | 'last_suggested' | 'last_visited' | 'liked'>>
+): Promise<void> {
+  // Build dynamic update — only set provided fields
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (updates.times_suggested !== undefined) { sets.push('times_suggested'); vals.push(updates.times_suggested); }
+  if (updates.times_accepted !== undefined) { sets.push('times_accepted'); vals.push(updates.times_accepted); }
+  if (updates.times_dismissed !== undefined) { sets.push('times_dismissed'); vals.push(updates.times_dismissed); }
+  if (updates.times_visited !== undefined) { sets.push('times_visited'); vals.push(updates.times_visited); }
+  if (updates.last_suggested !== undefined) { sets.push('last_suggested'); vals.push(updates.last_suggested); }
+  if (updates.last_visited !== undefined) { sets.push('last_visited'); vals.push(updates.last_visited); }
+  if (updates.liked !== undefined) { sets.push('liked'); vals.push(updates.liked); }
+
+  // Use individual queries for each field since @vercel/postgres uses tagged templates
+  if (updates.times_suggested !== undefined) await sql`UPDATE places SET times_suggested = ${updates.times_suggested}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.times_accepted !== undefined) await sql`UPDATE places SET times_accepted = ${updates.times_accepted}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.times_dismissed !== undefined) await sql`UPDATE places SET times_dismissed = ${updates.times_dismissed}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.times_visited !== undefined) await sql`UPDATE places SET times_visited = ${updates.times_visited}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.last_suggested !== undefined) await sql`UPDATE places SET last_suggested = ${updates.last_suggested}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.last_visited !== undefined) await sql`UPDATE places SET last_visited = ${updates.last_visited}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.liked !== undefined) await sql`UPDATE places SET liked = ${updates.liked}, updated_at = NOW() WHERE id = ${id}`;
+}
+
+export async function getPlacesCount(): Promise<number> {
+  const result = await sql`SELECT COUNT(*) as count FROM places`;
+  return Number(result.rows[0].count);
+}
+
+export async function getPlacesStats(): Promise<{
+  total: number;
+  enriched: number;
+  visited: number;
+  liked: number;
+  byCategory: Record<string, number>;
+}> {
+  const total = await sql`SELECT COUNT(*) as c FROM places`;
+  const enriched = await sql`SELECT COUNT(*) as c FROM places WHERE enriched_at IS NOT NULL`;
+  const visited = await sql`SELECT COUNT(*) as c FROM places WHERE times_visited > 0`;
+  const liked = await sql`SELECT COUNT(*) as c FROM places WHERE liked = true`;
+  const cats = await sql`SELECT category, COUNT(*) as c FROM places GROUP BY category ORDER BY c DESC`;
+
+  const byCategory: Record<string, number> = {};
+  for (const row of cats.rows) {
+    byCategory[row.category as string] = Number(row.c);
+  }
+
+  return {
+    total: Number(total.rows[0].c),
+    enriched: Number(enriched.rows[0].c),
+    visited: Number(visited.rows[0].c),
+    liked: Number(liked.rows[0].c),
+    byCategory,
+  };
+}
+
+// ── Suggestions ───────────────────────────────────────────
+
+export interface SuggestionRow {
+  id: number;
+  place_id: string;
+  suggestion_date: string;
+  suggested_for: string | null;
+  score: number;
+  scoring_reasons: unknown;
+  status: string;
+  created_at: string;
+}
+
+export async function insertSuggestion(s: {
+  place_id: string;
+  suggestion_date: string;
+  suggested_for?: string;
+  score: number;
+  scoring_reasons?: unknown;
+}): Promise<SuggestionRow> {
+  const result = await sql`
+    INSERT INTO suggestions (place_id, suggestion_date, suggested_for, score, scoring_reasons)
+    VALUES (${s.place_id}, ${s.suggestion_date}, ${s.suggested_for || null}, ${s.score}, ${s.scoring_reasons ? JSON.stringify(s.scoring_reasons) : '{}'})
+    RETURNING *
+  `;
+  return result.rows[0] as SuggestionRow;
+}
+
+export async function getSuggestions(date: string, status?: string): Promise<(SuggestionRow & PlaceRow)[]> {
+  if (status) {
+    const result = await sql`
+      SELECT s.*, p.name, p.category, p.subcategory, p.area, p.address,
+             p.lat, p.lng, p.google_maps_url, p.website, p.google_rating,
+             p.vibe_tags, p.time_tags, p.weather_tags, p.social_tags,
+             p.price_tier, p.booking_type, p.duration, p.notes,
+             p.times_visited, p.liked, p.cuisine_tags
+      FROM suggestions s
+      JOIN places p ON s.place_id = p.id
+      WHERE s.suggestion_date = ${date} AND s.status = ${status}
+      ORDER BY s.score DESC
+    `;
+    return result.rows as (SuggestionRow & PlaceRow)[];
+  }
+  const result = await sql`
+    SELECT s.*, p.name, p.category, p.subcategory, p.area, p.address,
+           p.lat, p.lng, p.google_maps_url, p.website, p.google_rating,
+           p.vibe_tags, p.time_tags, p.weather_tags, p.social_tags,
+           p.price_tier, p.booking_type, p.duration, p.notes,
+           p.times_visited, p.liked, p.cuisine_tags
+    FROM suggestions s
+    JOIN places p ON s.place_id = p.id
+    WHERE s.suggestion_date = ${date}
+    ORDER BY s.score DESC
+  `;
+  return result.rows as (SuggestionRow & PlaceRow)[];
+}
+
+export async function updateSuggestionStatus(id: number, status: string): Promise<void> {
+  await sql`UPDATE suggestions SET status = ${status} WHERE id = ${id}`;
+}
+
+// ── Events Cache ──────────────────────────────────────────
+
+export interface EventCacheRow {
+  id: string;
+  title: string;
+  venue: string | null;
+  date_start: string;
+  date_end: string | null;
+  category: string | null;
+  price: string | null;
+  url: string | null;
+  calendar_link: string | null;
+  tags: string[];
+  reason: string | null;
+  closing_date: string | null;
+  score: number | null;
+  status: string;
+  times_suggested: number;
+  last_suggested: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function upsertEvent(event: Partial<EventCacheRow> & { id: string; title: string }): Promise<EventCacheRow> {
+  const result = await sql`
+    INSERT INTO events_cache (
+      id, title, venue, date_start, date_end, category, price, url,
+      calendar_link, tags, reason, closing_date, score, status,
+      times_suggested, last_suggested
+    ) VALUES (
+      ${event.id}, ${event.title}, ${event.venue || null},
+      ${event.date_start || new Date().toISOString()}, ${event.date_end || null},
+      ${event.category || null}, ${event.price || null}, ${event.url || null},
+      ${event.calendar_link || null}, ${JSON.stringify(event.tags || [])},
+      ${event.reason || null}, ${event.closing_date || null},
+      ${event.score || null}, ${event.status || 'pending'},
+      ${event.times_suggested || 0}, ${event.last_suggested || null}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      title = EXCLUDED.title,
+      venue = COALESCE(EXCLUDED.venue, events_cache.venue),
+      date_start = EXCLUDED.date_start,
+      date_end = COALESCE(EXCLUDED.date_end, events_cache.date_end),
+      category = COALESCE(EXCLUDED.category, events_cache.category),
+      price = COALESCE(EXCLUDED.price, events_cache.price),
+      url = COALESCE(EXCLUDED.url, events_cache.url),
+      calendar_link = COALESCE(EXCLUDED.calendar_link, events_cache.calendar_link),
+      tags = EXCLUDED.tags,
+      reason = COALESCE(EXCLUDED.reason, events_cache.reason),
+      closing_date = COALESCE(EXCLUDED.closing_date, events_cache.closing_date),
+      score = COALESCE(EXCLUDED.score, events_cache.score),
+      updated_at = NOW()
+    RETURNING *
+  `;
+  return result.rows[0] as EventCacheRow;
+}
+
+export async function getEvents(dateFrom: string, dateTo: string, status?: string): Promise<EventCacheRow[]> {
+  if (status) {
+    const result = await sql`
+      SELECT * FROM events_cache
+      WHERE date_start >= ${dateFrom} AND date_start <= ${dateTo} AND status = ${status}
+      ORDER BY score DESC NULLS LAST, date_start ASC
+    `;
+    return result.rows as EventCacheRow[];
+  }
+  const result = await sql`
+    SELECT * FROM events_cache
+    WHERE date_start >= ${dateFrom} AND date_start <= ${dateTo}
+    ORDER BY score DESC NULLS LAST, date_start ASC
+  `;
+  return result.rows as EventCacheRow[];
+}
+
+export async function updateEventStatus(id: string, status: string): Promise<void> {
+  await sql`UPDATE events_cache SET status = ${status}, updated_at = NOW() WHERE id = ${id}`;
+}
+
+// ── User Context ──────────────────────────────────────────
+
+export async function getUserContext(key: string): Promise<unknown | null> {
+  const result = await sql`SELECT value FROM user_context WHERE key = ${key} LIMIT 1`;
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0] as { value: unknown };
+  return typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+}
+
+export async function setUserContext(key: string, value: unknown): Promise<void> {
+  const json = JSON.stringify(value);
+  await sql`
+    INSERT INTO user_context (key, value) VALUES (${key}, ${json})
+    ON CONFLICT (key) DO UPDATE SET value = ${json}, updated_at = NOW()
+  `;
+}
+
+export async function getAllUserContext(): Promise<Record<string, unknown>> {
+  const result = await sql`SELECT key, value FROM user_context`;
+  const ctx: Record<string, unknown> = {};
+  for (const row of result.rows) {
+    const r = row as { key: string; value: unknown };
+    ctx[r.key] = typeof r.value === 'string' ? JSON.parse(r.value) : r.value;
+  }
+  return ctx;
+}
+
+// ── Visit Reviews ─────────────────────────────────────────
+
+export interface VisitReviewRow {
+  id: number;
+  place_id: string | null;
+  event_id: string | null;
+  review_week: string;
+  status: string;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export async function insertVisitReview(review: {
+  place_id?: string;
+  event_id?: string;
+  review_week: string;
+}): Promise<VisitReviewRow> {
+  const result = await sql`
+    INSERT INTO visit_reviews (place_id, event_id, review_week)
+    VALUES (${review.place_id || null}, ${review.event_id || null}, ${review.review_week})
+    RETURNING *
+  `;
+  return result.rows[0] as VisitReviewRow;
+}
+
+export async function getVisitReviews(week: string, status?: string): Promise<(VisitReviewRow & { place_name?: string })[]> {
+  if (status) {
+    const result = await sql`
+      SELECT vr.*, p.name as place_name, p.category as place_category, p.area as place_area
+      FROM visit_reviews vr
+      LEFT JOIN places p ON vr.place_id = p.id
+      WHERE vr.review_week = ${week} AND vr.status = ${status}
+      ORDER BY vr.created_at DESC
+    `;
+    return result.rows as (VisitReviewRow & { place_name?: string })[];
+  }
+  const result = await sql`
+    SELECT vr.*, p.name as place_name, p.category as place_category, p.area as place_area
+    FROM visit_reviews vr
+    LEFT JOIN places p ON vr.place_id = p.id
+    WHERE vr.review_week = ${week}
+    ORDER BY vr.created_at DESC
+  `;
+  return result.rows as (VisitReviewRow & { place_name?: string })[];
+}
+
+export async function updateVisitReviewStatus(id: number, status: string): Promise<void> {
+  await sql`UPDATE visit_reviews SET status = ${status}, reviewed_at = NOW() WHERE id = ${id}`;
+}
+
 // ── Setup ─────────────────────────────────────────────────
 
 export async function setupDatabase(): Promise<void> {
+  // --- Existing tables ---
   await sql`
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
@@ -285,4 +708,119 @@ export async function setupDatabase(): Promise<void> {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_saved_items_date ON saved_items(saved_at DESC)`;
+
+  // --- Activity Engine tables ---
+  await sql`
+    CREATE TABLE IF NOT EXISTS places (
+      id TEXT PRIMARY KEY,
+      notion_page_id TEXT UNIQUE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'Uncategorised',
+      subcategory TEXT NOT NULL DEFAULT 'Other',
+      cuisine_tags JSONB NOT NULL DEFAULT '[]',
+      area TEXT,
+      address TEXT,
+      lat DOUBLE PRECISION,
+      lng DOUBLE PRECISION,
+      google_maps_url TEXT,
+      website TEXT,
+      google_rating NUMERIC(2,1),
+      vibe_tags JSONB NOT NULL DEFAULT '[]',
+      time_tags JSONB NOT NULL DEFAULT '[]',
+      weather_tags JSONB NOT NULL DEFAULT '[]',
+      social_tags JSONB NOT NULL DEFAULT '[]',
+      day_tags JSONB NOT NULL DEFAULT '[]',
+      season_tags JSONB NOT NULL DEFAULT '[]',
+      price_tier TEXT,
+      booking_type TEXT,
+      duration TEXT,
+      opening_hours JSONB,
+      notes TEXT,
+      times_suggested INTEGER NOT NULL DEFAULT 0,
+      times_accepted INTEGER NOT NULL DEFAULT 0,
+      times_dismissed INTEGER NOT NULL DEFAULT 0,
+      times_visited INTEGER NOT NULL DEFAULT 0,
+      last_suggested TIMESTAMPTZ,
+      last_visited TIMESTAMPTZ,
+      liked BOOLEAN NOT NULL DEFAULT FALSE,
+      source TEXT NOT NULL DEFAULT 'google-maps',
+      google_place_id TEXT,
+      enriched_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_places_area ON places(area)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_places_category ON places(category)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_places_enriched ON places(enriched_at)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS suggestions (
+      id SERIAL PRIMARY KEY,
+      place_id TEXT REFERENCES places(id),
+      suggestion_date DATE NOT NULL,
+      suggested_for TEXT,
+      score NUMERIC(5,2),
+      scoring_reasons JSONB NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_suggestions_date ON suggestions(suggestion_date)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_suggestions_status ON suggestions(status)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS events_cache (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      venue TEXT,
+      date_start TIMESTAMPTZ,
+      date_end TIMESTAMPTZ,
+      category TEXT,
+      price TEXT,
+      url TEXT,
+      calendar_link TEXT,
+      tags JSONB NOT NULL DEFAULT '[]',
+      reason TEXT,
+      closing_date DATE,
+      score NUMERIC(5,2),
+      status TEXT NOT NULL DEFAULT 'pending',
+      times_suggested INTEGER NOT NULL DEFAULT 0,
+      last_suggested TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_events_date ON events_cache(date_start)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_events_closing ON events_cache(closing_date)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_context (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  // Seed defaults if empty
+  await sql`
+    INSERT INTO user_context (key, value) VALUES ('location', '{"area": "Shoreditch", "lat": 51.5235, "lng": -0.0775}')
+    ON CONFLICT (key) DO NOTHING
+  `;
+  await sql`
+    INSERT INTO user_context (key, value) VALUES ('companions', '{"mode": "solo", "detail": null}')
+    ON CONFLICT (key) DO NOTHING
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS visit_reviews (
+      id SERIAL PRIMARY KEY,
+      place_id TEXT REFERENCES places(id),
+      event_id TEXT,
+      review_week DATE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_visit_reviews_week ON visit_reviews(review_week)`;
 }
