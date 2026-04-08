@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSavedItems } from '@/lib/SavedItemsContext';
 
 interface EventData {
   title?: string;
@@ -79,9 +80,11 @@ function getMapUrl(venue: string, mapUrl?: string): string {
   if (mapUrl) return mapUrl;
   return `https://www.google.com/maps/search/${encodeURIComponent(venue)}`;
 }
+
 export function EventCard({ data }: { data: Record<string, unknown> }) {
-  const [saved, setSaved] = useState(false);
+  const { isSaved, getSavedId, saveItem, unsaveItem } = useSavedItems();
   const [calAdded, setCalAdded] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const d = data as unknown as EventData;
   const title = d.title || '';
@@ -97,10 +100,41 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
   const category = d.category || null;
   const mapUrl = d.map_url || null;
 
+  const saved = isSaved(title, venue || undefined);
+  const savedId = getSavedId(title, venue || undefined);
+
   const catIcon = getCategoryIcon(category || undefined, tags);
   const canAddToCalendar = hasSpecificDate(date) && !inCalendar;
   const closing = isClosingSoon(date);
   const mapsLink = venue ? getMapUrl(venue, mapUrl || undefined) : null;
+
+  const handleSaveToggle = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (saved && savedId) {
+        await unsaveItem(savedId);
+      } else {
+        await saveItem({
+          title,
+          venue: venue || null,
+          date: date || null,
+          time: time || null,
+          price: price || null,
+          category: category || null,
+          tags,
+          url: d.url || null,
+          map_url: mapUrl || null,
+          booking_url: d.booking_url || null,
+          image_url: imageUrl || null,
+          reason: reason || null,
+        });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className={`rounded-2xl shadow-sm border overflow-hidden ${
       closing ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100 bg-white'
@@ -211,8 +245,10 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
 
           {/* Save for later */}
           <button
-            onClick={() => setSaved(!saved)}
+            onClick={handleSaveToggle}
+            disabled={saving}
             className={`flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-medium rounded-lg transition-colors ${
+              saving ? 'opacity-50 cursor-wait' :
               saved
                 ? 'text-blue-700 bg-blue-100'
                 : 'text-gray-500 bg-gray-100 hover:bg-gray-200'
@@ -221,7 +257,7 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
             <svg className="w-3.5 h-3.5" fill={saved ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
             </svg>
-            {saved ? 'Saved' : 'Save'}
+            {saving ? '...' : saved ? 'Saved' : 'Save'}
           </button>
           {/* External link */}
           {url && (

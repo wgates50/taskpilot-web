@@ -162,6 +162,59 @@ export async function getEvidenceLog(limit: number = 50): Promise<unknown[]> {
   return result.rows;
 }
 
+// ── Saved Items ──────────────────────────────────────────
+
+export interface SavedItemRow {
+  id: string;
+  title: string;
+  venue: string | null;
+  date: string | null;
+  time: string | null;
+  price: string | null;
+  category: string | null;
+  tags: string[];
+  url: string | null;
+  map_url: string | null;
+  booking_url: string | null;
+  image_url: string | null;
+  reason: string | null;
+  source_task_id: string | null;
+  saved_at: string;
+}
+
+export async function getSavedItems(): Promise<SavedItemRow[]> {
+  const result = await sql`
+    SELECT * FROM saved_items ORDER BY saved_at DESC
+  `;
+  return result.rows as SavedItemRow[];
+}
+
+export async function getSavedItemByTitle(title: string, venue: string | null): Promise<SavedItemRow | null> {
+  const result = venue
+    ? await sql`SELECT * FROM saved_items WHERE title = ${title} AND venue = ${venue} LIMIT 1`
+    : await sql`SELECT * FROM saved_items WHERE title = ${title} AND venue IS NULL LIMIT 1`;
+  return (result.rows[0] as SavedItemRow) || null;
+}
+
+export async function insertSavedItem(item: Omit<SavedItemRow, 'saved_at'>): Promise<SavedItemRow> {
+  const result = await sql`
+    INSERT INTO saved_items (id, title, venue, date, time, price, category, tags, url, map_url, booking_url, image_url, reason, source_task_id)
+    VALUES (
+      ${item.id}, ${item.title}, ${item.venue}, ${item.date}, ${item.time},
+      ${item.price}, ${item.category}, ${JSON.stringify(item.tags || [])},
+      ${item.url}, ${item.map_url}, ${item.booking_url}, ${item.image_url},
+      ${item.reason}, ${item.source_task_id}
+    )
+    RETURNING *
+  `;
+  return result.rows[0] as SavedItemRow;
+}
+
+export async function deleteSavedItem(id: string): Promise<boolean> {
+  const result = await sql`DELETE FROM saved_items WHERE id = ${id}`;
+  return (result.rowCount ?? 0) > 0;
+}
+
 // ── Setup ─────────────────────────────────────────────────
 
 export async function setupDatabase(): Promise<void> {
@@ -212,4 +265,24 @@ export async function setupDatabase(): Promise<void> {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_evidence_log_date ON evidence_log(logged_at DESC)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS saved_items (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      venue TEXT,
+      date TEXT,
+      time TEXT,
+      price TEXT,
+      category TEXT,
+      tags JSONB NOT NULL DEFAULT '[]',
+      url TEXT,
+      map_url TEXT,
+      booking_url TEXT,
+      image_url TEXT,
+      reason TEXT,
+      source_task_id TEXT,
+      saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_saved_items_date ON saved_items(saved_at DESC)`;
 }
