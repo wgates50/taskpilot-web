@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+// ── Types ────────────────────────────────────────────────
 
 interface Suggestion {
   id: number;
@@ -15,6 +17,8 @@ interface Suggestion {
   subcategory: string;
   area: string | null;
   address: string | null;
+  lat: number | null;
+  lng: number | null;
   google_maps_url: string | null;
   website: string | null;
   google_rating: number | null;
@@ -29,6 +33,35 @@ interface Suggestion {
   times_visited: number;
   liked: boolean;
   cuisine_tags: string[];
+}
+
+interface PlaceRecord {
+  id: string;
+  name: string;
+  category: string;
+  subcategory: string;
+  area: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  google_maps_url: string | null;
+  website: string | null;
+  google_rating: number | null;
+  vibe_tags: string[];
+  time_tags: string[];
+  weather_tags: string[];
+  social_tags: string[];
+  cuisine_tags: string[];
+  price_tier: string | null;
+  booking_type: string | null;
+  duration: string | null;
+  notes: string | null;
+  times_visited: number;
+  times_suggested: number;
+  times_dismissed: number;
+  last_suggested: string | null;
+  last_visited: string | null;
+  liked: boolean;
 }
 
 interface CachedEvent {
@@ -64,6 +97,17 @@ interface UserContext {
   companions?: { mode: string; detail: string | null };
 }
 
+interface WeatherData {
+  temp: number;
+  weatherCode: number;
+  isRainy: boolean;
+  isSunny: boolean;
+  isCold: boolean;
+  isWarm: boolean;
+}
+
+// ── Constants ────────────────────────────────────────────
+
 const CATEGORY_EMOJI: Record<string, string> = {
   'Food & Drink': '🍽️',
   'Culture & Entertainment': '🎭',
@@ -87,6 +131,24 @@ const COMPANION_OPTIONS = [
   { mode: 'family', label: 'Family', icon: '👨‍👩‍👧' },
 ];
 
+// WMO weather codes → readable conditions
+const WEATHER_SUNNY = new Set([0, 1]); // clear, mainly clear
+const WEATHER_RAINY = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99]);
+
+// ── Scoring weights (mirrors the daily-activity-engine) ──
+
+const WEIGHTS = {
+  interest: 0.30,
+  weather: 0.20,
+  time: 0.15,
+  location: 0.10,
+  social: 0.10,
+  novelty: 0.10,
+  season: 0.05,
+};
+
+// ── Helpers ──────────────────────────────────────────────
+
 function getWeekDates(offset: number = 0): { dates: Date[]; label: string } {
   const now = new Date();
   const monday = new Date(now);
@@ -103,7 +165,6 @@ function getWeekDates(offset: number = 0): { dates: Date[]; label: string } {
   const sun = dates[6];
   const monthFmt = (d: Date) => d.toLocaleDateString('en-GB', { month: 'short' });
   const label = `${monday.getDate()} ${monthFmt(monday)} – ${sun.getDate()} ${monthFmt(sun)}`;
-
   return { dates, label };
 }
 
@@ -120,6 +181,224 @@ function getDayLabel(d: Date): string {
   return d.toLocaleDateString('en-GB', { weekday: 'long' });
 }
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function getTimeSlot(): 'morning' | 'lunch' | 'afternoon' | 'evening' | 'late' {
+  const h = new Date().getHours();
+  if (h < 11) return 'morning';
+  if (h < 14) return 'lunch';
+  if (h < 17) return 'afternoon';
+  if (h < 21) return 'evening';
+  return 'late';
+}
+
+function getSeason(): string {
+  const m = new Date().getMonth();
+  if (m >= 2 && m <= 4) return 'spring';
+  if (m >= 5 && m <= 7) return 'summer';
+  if (m >= 8 && m <= 10) return 'autumn';
+  return 'winter';
+}
+
+function buildCalendarUrl(name: string, area: string | null, address: string | null, dateStr: string, duration: string | null): string {
+  const startDate = new Date(dateStr + 'T18:00:00');
+  const durationHrs = duration === 'half-day' ? 4 : duration === 'full-day' ? 8 : 2;
+  const endDate = new Date(startDate.getTime() + durationHrs * 3600000);
+
+  const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const dates = `${fmt(startDate)}/${fmt(endDate)}`;
+  const location = address || area || '';
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: name,
+    dates,
+    location,
+    details: `Added from TaskPilot Planning`,
+  });
+  return `https://calendar.google.com/calendar/event?${params.toString()}`;
+}
+
+// ── Weather fetch (Open-Meteo, free, no key) ─────────────
+
+async function fetchWeather(lat: number, lng: number): Promise<WeatherData> {
+  try {
+    const res = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code&timezone=Europe%2FLondon`
+    );
+    const data = await res.json();
+    const temp = data.current?.temperature_2m ?? 15;
+    const code = data.current?.weather_code ?? 0;
+    return {
+      temp,
+      weatherCode: code,
+      isRainy: WEATHER_RAINY.has(code),
+      isSunny: WEATHER_SUNNY.has(code),
+      isCold: temp < 8,
+      isWarm: temp > 20,
+    };
+  } catch {
+    return { temp: 15, weatherCode: 0, isRainy: false, isSunny: false, isCold: false, isWarm: false };
+  }
+}
+
+// ── Client-side scoring ──────────────────────────────────
+
+function scorePlace(
+  place: PlaceRecord,
+  weather: WeatherData,
+  timeSlot: string,
+  season: string,
+  companionMode: string,
+  userLat: number,
+  userLng: number,
+): { score: number; reasons: Record<string, number> } {
+  const reasons: Record<string, number> = {};
+
+  // Interest score (30%) — use google_rating + liked + visit history
+  let interest = 50;
+  if (place.google_rating) interest = Math.min(100, (place.google_rating / 5) * 80 + 20);
+  if (place.liked) interest = Math.min(100, interest + 20);
+  if (place.times_visited > 3) interest = Math.max(20, interest - 15); // diminishing returns
+  reasons.interest = interest;
+
+  // Weather score (20%) — match weather_tags to current conditions
+  let weatherScore = 50;
+  const wt = place.weather_tags || [];
+  if (weather.isRainy && wt.includes('rainy-day')) weatherScore = 90;
+  else if (weather.isRainy && wt.includes('outdoor')) weatherScore = 15;
+  else if (weather.isSunny && wt.includes('sunny-day')) weatherScore = 90;
+  else if (weather.isSunny && wt.includes('outdoor')) weatherScore = 80;
+  if (weather.isCold && wt.includes('cosy')) weatherScore = Math.min(100, weatherScore + 20);
+  if (weather.isWarm && wt.includes('outdoor')) weatherScore = Math.min(100, weatherScore + 15);
+  reasons.weather = weatherScore;
+
+  // Time score (15%) — match time_tags to current time slot
+  let timeScore = 50;
+  const tt = place.time_tags || [];
+  if (tt.includes(timeSlot)) timeScore = 90;
+  else if (tt.length === 0) timeScore = 50; // no tags = neutral
+  else timeScore = 30; // has tags but doesn't match
+  // Boost food during meal times
+  if (place.category.toLowerCase().includes('food') || place.category.toLowerCase().includes('drink')) {
+    if (timeSlot === 'lunch' || timeSlot === 'evening') timeScore = Math.min(100, timeScore + 15);
+  }
+  reasons.time = timeScore;
+
+  // Location score (10%) — proximity to user
+  let locationScore = 50;
+  if (place.lat && place.lng) {
+    const dist = haversineKm(userLat, userLng, place.lat, place.lng);
+    if (dist < 1) locationScore = 95;
+    else if (dist < 3) locationScore = 75;
+    else if (dist < 6) locationScore = 50;
+    else if (dist < 10) locationScore = 30;
+    else locationScore = 15;
+  }
+  reasons.location = locationScore;
+
+  // Social score (10%) — match social_tags to companion mode
+  let socialScore = 50;
+  const st = place.social_tags || [];
+  if (st.includes(companionMode)) socialScore = 90;
+  else if (st.length === 0) socialScore = 50;
+  reasons.social = socialScore;
+
+  // Novelty score (10%) — prefer unvisited or long-ago-visited places
+  let noveltyScore = 50;
+  if (place.times_visited === 0) noveltyScore = 85;
+  else if (place.last_visited) {
+    const daysSince = (Date.now() - new Date(place.last_visited).getTime()) / 86400000;
+    if (daysSince > 90) noveltyScore = 75;
+    else if (daysSince > 30) noveltyScore = 55;
+    else if (daysSince > 7) noveltyScore = 30;
+    else noveltyScore = 10; // visited very recently
+  }
+  // Penalise frequently dismissed places
+  if (place.times_dismissed > 3) noveltyScore = Math.max(0, noveltyScore - 20);
+  reasons.novelty = noveltyScore;
+
+  // Season score (5%)
+  let seasonScore = 50;
+  if (place.vibe_tags?.includes(season)) seasonScore = 85;
+  reasons.season = seasonScore;
+
+  // Weighted total
+  const score =
+    reasons.interest * WEIGHTS.interest +
+    reasons.weather * WEIGHTS.weather +
+    reasons.time * WEIGHTS.time +
+    reasons.location * WEIGHTS.location +
+    reasons.social * WEIGHTS.social +
+    reasons.novelty * WEIGHTS.novelty +
+    reasons.season * WEIGHTS.season;
+
+  return { score: Math.round(score * 10) / 10, reasons };
+}
+
+// ── GPS hook ─────────────────────────────────────────────
+
+function useGeoLocation(onUpdate: (lat: number, lng: number, area: string) => void) {
+  const watchRef = useRef<number | null>(null);
+  const lastUpdateRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    const handlePosition = async (pos: GeolocationPosition) => {
+      const { latitude, longitude } = pos.coords;
+      // Throttle updates to once per 5 minutes
+      if (Date.now() - lastUpdateRef.current < 300000) return;
+      lastUpdateRef.current = Date.now();
+
+      // Reverse geocode via Nominatim (free, no key)
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&zoom=14`,
+          { headers: { 'User-Agent': 'TaskPilot/1.0' } }
+        );
+        const data = await res.json();
+        const area = data.address?.suburb || data.address?.neighbourhood ||
+          data.address?.city_district || data.address?.town || 'London';
+        onUpdate(latitude, longitude, area);
+      } catch {
+        // Fall back to coordinates without area name
+        onUpdate(latitude, longitude, 'London');
+      }
+    };
+
+    // Initial position
+    navigator.geolocation.getCurrentPosition(handlePosition, () => {}, {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 300000, // 5 min cache
+    });
+
+    // Watch for movement
+    watchRef.current = navigator.geolocation.watchPosition(handlePosition, () => {}, {
+      enableHighAccuracy: false,
+      timeout: 15000,
+      maximumAge: 300000,
+    });
+
+    return () => {
+      if (watchRef.current !== null) {
+        navigator.geolocation.clearWatch(watchRef.current);
+      }
+    };
+  }, [onUpdate]);
+}
+
+// ── Main Component ───────────────────────────────────────
+
 export function PlanningScreen() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [suggestions, setSuggestions] = useState<Record<string, Suggestion[]>>({});
@@ -128,8 +407,36 @@ export function PlanningScreen() {
   const [context, setContext] = useState<UserContext>({});
   const [loading, setLoading] = useState(true);
   const [rescoring, setRescoring] = useState(false);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<'waiting' | 'active' | 'denied'>('waiting');
+  const [calendarAdding, setCalendarAdding] = useState<string | null>(null);
 
   const { dates, label: weekLabel } = getWeekDates(weekOffset);
+
+  // GPS integration
+  const handleGeoUpdate = useCallback(async (lat: number, lng: number, area: string) => {
+    setGpsStatus('active');
+    setContext(prev => ({ ...prev, location: { area, lat, lng } }));
+    // Persist to server
+    try {
+      await fetch('/api/context', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'location', value: { area, lat, lng } }),
+      });
+    } catch (e) {
+      console.error('Failed to update location context:', e);
+    }
+  }, []);
+
+  useGeoLocation(handleGeoUpdate);
+
+  // Fetch weather on mount and when location changes
+  useEffect(() => {
+    const lat = context.location?.lat ?? 51.5235;
+    const lng = context.location?.lng ?? -0.0775;
+    fetchWeather(lat, lng).then(setWeather);
+  }, [context.location?.lat, context.location?.lng]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -137,7 +444,6 @@ export function PlanningScreen() {
       const from = formatDate(dates[0]);
       const to = formatDate(dates[6]);
 
-      // Fetch suggestions for each day, events, context, and reviews in parallel
       const [eventsRes, contextRes, reviewsRes, ...dayResults] = await Promise.all([
         fetch(`/api/events?from=${from}T00:00:00Z&to=${to}T23:59:59Z`),
         fetch('/api/context'),
@@ -178,13 +484,111 @@ export function PlanningScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleAction = async (suggestionId: number, placeId: string, action: 'accepted' | 'dismissed') => {
+  // ── Client-side rescoring ("Suggest Now") ──────────────
+
+  const handleRescore = async () => {
+    setRescoring(true);
     try {
-      await fetch('/api/suggestions', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: suggestionId, status: action, place_id: placeId }),
+      const lat = context.location?.lat ?? 51.5235;
+      const lng = context.location?.lng ?? -0.0775;
+      const companionMode = context.companions?.mode || 'solo';
+      const timeSlot = getTimeSlot();
+      const currentSeason = getSeason();
+
+      // Fetch all places + fresh weather in parallel
+      const [placesRes, freshWeather] = await Promise.all([
+        fetch('/api/places?limit=500'),
+        fetchWeather(lat, lng),
+      ]);
+
+      setWeather(freshWeather);
+
+      if (!placesRes.ok) {
+        // Fall back to just refreshing from server
+        await fetchData();
+        return;
+      }
+
+      const { places } = await placesRes.json() as { places: PlaceRecord[] };
+
+      // Score every place
+      const scored = places.map(p => {
+        const { score, reasons } = scorePlace(p, freshWeather, timeSlot, currentSeason, companionMode, lat, lng);
+        return { place: p, score, reasons };
       });
+
+      // Sort descending, take top 5 for today
+      scored.sort((a, b) => b.score - a.score);
+      const top = scored.slice(0, 5);
+
+      // Build suggestion-shaped objects for today
+      const todayKey = formatDate(new Date());
+      const localSuggestions: Suggestion[] = top.map((item, idx) => ({
+        id: -(idx + 1), // negative IDs = local/unsaved
+        place_id: item.place.id,
+        suggestion_date: todayKey,
+        suggested_for: timeSlot,
+        score: item.score,
+        scoring_reasons: item.reasons,
+        status: 'pending',
+        name: item.place.name,
+        category: item.place.category,
+        subcategory: item.place.subcategory,
+        area: item.place.area,
+        address: item.place.address,
+        lat: item.place.lat,
+        lng: item.place.lng,
+        google_maps_url: item.place.google_maps_url,
+        website: item.place.website,
+        google_rating: item.place.google_rating,
+        vibe_tags: item.place.vibe_tags,
+        time_tags: item.place.time_tags,
+        weather_tags: item.place.weather_tags,
+        social_tags: item.place.social_tags,
+        price_tier: item.place.price_tier,
+        booking_type: item.place.booking_type,
+        duration: item.place.duration,
+        notes: item.place.notes,
+        times_visited: item.place.times_visited,
+        liked: item.place.liked,
+        cuisine_tags: item.place.cuisine_tags,
+      }));
+
+      setSuggestions(prev => ({ ...prev, [todayKey]: localSuggestions }));
+    } catch (err) {
+      console.error('Rescore failed:', err);
+      await fetchData();
+    } finally {
+      setRescoring(false);
+    }
+  };
+
+  // ── Actions ────────────────────────────────────────────
+
+  const handleAction = async (suggestionId: number, placeId: string, action: 'accepted' | 'dismissed') => {
+    if (action === 'accepted') {
+      // Find the suggestion to get place details
+      for (const key in suggestions) {
+        const s = suggestions[key].find(s => s.id === suggestionId);
+        if (s) {
+          setCalendarAdding(s.place_id);
+          const calUrl = buildCalendarUrl(s.name, s.area, s.address, key, s.duration);
+          window.open(calUrl, '_blank');
+          setCalendarAdding(null);
+          break;
+        }
+      }
+    }
+
+    try {
+      // Only call API for server-side suggestions (positive IDs)
+      if (suggestionId > 0) {
+        await fetch('/api/suggestions', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: suggestionId, status: action, place_id: placeId }),
+        });
+      }
       // Optimistic update
       setSuggestions(prev => {
         const updated = { ...prev };
@@ -201,13 +605,35 @@ export function PlanningScreen() {
   };
 
   const handleEventAction = async (eventId: string, action: 'accepted' | 'dismissed') => {
+    if (action === 'accepted') {
+      // Find the event and open calendar URL
+      const event = events.find(e => e.id === eventId);
+      if (event) {
+        const startDate = new Date(event.date_start);
+        const endDate = event.date_end ? new Date(event.date_end) : new Date(startDate.getTime() + 2 * 3600000);
+        const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+        const params = new URLSearchParams({
+          action: 'TEMPLATE',
+          text: event.title,
+          dates: `${fmt(startDate)}/${fmt(endDate)}`,
+          location: event.venue || '',
+          details: event.url ? `More info: ${event.url}` : 'Added from TaskPilot',
+        });
+        window.open(`https://calendar.google.com/calendar/event?${params.toString()}`, '_blank');
+      }
+    }
+
     try {
       await fetch('/api/events', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: eventId, status: action }),
       });
-      setEvents(prev => prev.filter(e => e.id !== eventId || action !== 'dismissed'));
+      if (action === 'dismissed') {
+        setEvents(prev => prev.filter(e => e.id !== eventId));
+      } else {
+        setEvents(prev => prev.map(e => e.id === eventId ? { ...e, status: 'accepted' } : e));
+      }
     } catch (err) {
       console.error('Event action failed:', err);
     }
@@ -239,15 +665,10 @@ export function PlanningScreen() {
     }
   };
 
-  const handleRescore = async () => {
-    setRescoring(true);
-    // For now, just refresh — real rescoring will use weather API client-side in the future
-    await fetchData();
-    setRescoring(false);
-  };
-
   const pendingReviews = reviews.filter(r => r.status === 'pending');
   const activeEvents = events.filter(e => e.status !== 'dismissed');
+
+  // ── Render ─────────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -260,8 +681,8 @@ export function PlanningScreen() {
             disabled={rescoring}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full text-sm font-medium active:bg-blue-100 disabled:opacity-50"
           >
-            <span className={rescoring ? 'animate-spin' : ''}>🔄</span>
-            {rescoring ? 'Refreshing...' : 'Suggest Now'}
+            <span className={rescoring ? 'animate-spin' : ''}>✨</span>
+            {rescoring ? 'Scoring...' : 'Suggest Now'}
           </button>
         </div>
 
@@ -291,11 +712,22 @@ export function PlanningScreen() {
             <div className="mt-4 p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Context</span>
+                {weather && (
+                  <span className="text-xs text-gray-500">
+                    {weather.isRainy ? '🌧' : weather.isSunny ? '☀️' : '⛅'} {Math.round(weather.temp)}°C
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm">📍</span>
                 <span className="text-sm text-gray-700">{context.location?.area || 'Shoreditch'}</span>
-                <span className="text-xs text-gray-400">(auto)</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                  gpsStatus === 'active' ? 'bg-green-100 text-green-600' :
+                  gpsStatus === 'denied' ? 'bg-red-100 text-red-600' :
+                  'bg-gray-100 text-gray-500'
+                }`}>
+                  {gpsStatus === 'active' ? 'GPS' : gpsStatus === 'denied' ? 'No GPS' : 'auto'}
+                </span>
               </div>
               <div className="flex gap-1.5">
                 {COMPANION_OPTIONS.map(opt => (
@@ -315,10 +747,10 @@ export function PlanningScreen() {
               </div>
             </div>
 
-            {/* Visit reviews (if any) */}
+            {/* Visit reviews */}
             {pendingReviews.length > 0 && (
               <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100">
-                <h3 className="text-sm font-semibold text-amber-800 mb-2">📋 This Week's Check-in</h3>
+                <h3 className="text-sm font-semibold text-amber-800 mb-2">📋 This Week&apos;s Check-in</h3>
                 <p className="text-xs text-amber-600 mb-3">Did you go to these?</p>
                 {pendingReviews.map(review => (
                   <div key={review.id} className="flex items-center justify-between py-2 border-t border-amber-100 first:border-0">
@@ -384,20 +816,24 @@ export function PlanningScreen() {
                     )}
                   </div>
 
-                  {/* Events for this day */}
                   {dayEvents.map(event => (
                     <EventCard key={event.id} event={event} onAction={handleEventAction} />
                   ))}
 
-                  {/* Place suggestions for this day */}
                   {daySuggestions.map(s => (
-                    <SuggestionCard key={s.id} suggestion={s} onAction={handleAction} />
+                    <SuggestionCard
+                      key={s.id}
+                      suggestion={s}
+                      onAction={handleAction}
+                      calendarAdding={calendarAdding}
+                      dateKey={dateKey}
+                    />
                   ))}
                 </div>
               );
             })}
 
-            {/* Events section (not tied to specific day) */}
+            {/* Events section */}
             {activeEvents.length > 0 && (
               <div className="mt-6 mb-4">
                 <h2 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-1.5">
@@ -414,7 +850,7 @@ export function PlanningScreen() {
               <div className="text-center py-16">
                 <p className="text-4xl mb-3">✨</p>
                 <p className="text-sm font-medium text-gray-600 mb-1">No suggestions yet</p>
-                <p className="text-xs text-gray-400">The activity engine runs daily at 2 AM.<br/>Tap "Suggest Now" to refresh manually.</p>
+                <p className="text-xs text-gray-400">The activity engine runs daily at 2 AM.<br/>Tap &quot;Suggest Now&quot; to get instant picks based on your location, weather, and time.</p>
               </div>
             )}
           </>
@@ -426,23 +862,40 @@ export function PlanningScreen() {
 
 // ── Card Components ───────────────────────────────────────
 
-function SuggestionCard({ suggestion: s, onAction }: {
+function SuggestionCard({ suggestion: s, onAction, calendarAdding, dateKey }: {
   suggestion: Suggestion;
   onAction: (id: number, placeId: string, action: 'accepted' | 'dismissed') => void;
+  calendarAdding: string | null;
+  dateKey: string;
 }) {
   const emoji = CATEGORY_EMOJI[s.category] || '📍';
   const booking = s.booking_type ? BOOKING_LABELS[s.booking_type] : null;
   const isAccepted = s.status === 'accepted';
+  const isLocal = s.id < 0; // locally scored, not from server
+
+  // Top scoring reason
+  const topReason = s.scoring_reasons
+    ? Object.entries(s.scoring_reasons)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 2)
+        .map(([k, v]) => `${k}: ${Math.round(v as number)}`)
+        .join(', ')
+    : null;
 
   return (
     <div className={`mb-2 p-3 bg-white rounded-xl border shadow-sm ${
-      isAccepted ? 'border-green-200 bg-green-50/50' : 'border-gray-100'
+      isAccepted ? 'border-green-200 bg-green-50/50' :
+      isLocal ? 'border-blue-200 bg-blue-50/30' :
+      'border-gray-100'
     }`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
             <span className="text-sm">{emoji}</span>
             <h3 className="text-sm font-semibold text-gray-900 truncate">{s.name}</h3>
+            {isLocal && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-600 font-medium shrink-0">Live</span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
             {s.area && <span>{s.area}</span>}
@@ -464,14 +917,29 @@ function SuggestionCard({ suggestion: s, onAction }: {
             {s.score > 0 && (
               <span className="text-[10px] text-gray-400">Score: {Math.round(s.score)}</span>
             )}
+            {topReason && (
+              <span className="text-[10px] text-gray-300 hidden">{topReason}</span>
+            )}
           </div>
         </div>
-        {s.google_rating && (
-          <div className="text-right shrink-0">
-            <div className="text-xs font-bold text-gray-700">{s.google_rating}</div>
-            <div className="text-[10px] text-amber-500">★</div>
-          </div>
-        )}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {s.google_rating && (
+            <div className="text-right">
+              <div className="text-xs font-bold text-gray-700">{s.google_rating}</div>
+              <div className="text-[10px] text-amber-500">★</div>
+            </div>
+          )}
+          {s.google_maps_url && (
+            <a
+              href={s.google_maps_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-blue-500 underline"
+            >
+              Map
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Actions */}
@@ -479,10 +947,21 @@ function SuggestionCard({ suggestion: s, onAction }: {
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
           <button
             onClick={() => onAction(s.id, s.place_id, 'accepted')}
-            className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100"
+            disabled={calendarAdding === s.place_id}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100 disabled:opacity-50"
           >
             📅 Add to Calendar
           </button>
+          {s.website && (
+            <a
+              href={s.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium active:bg-gray-100"
+            >
+              🔗
+            </a>
+          )}
           <button
             onClick={() => onAction(s.id, s.place_id, 'dismissed')}
             className="px-3 py-1.5 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium active:bg-gray-100"
@@ -506,9 +985,12 @@ function EventCard({ event, onAction }: {
 }) {
   const emoji = event.category ? (CATEGORY_EMOJI[event.category] || '📅') : '📅';
   const isClosingSoon = event.closing_date && new Date(event.closing_date) <= new Date(Date.now() + 7 * 86400000);
+  const isAccepted = event.status === 'accepted';
 
   return (
-    <div className="mb-2 p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+    <div className={`mb-2 p-3 bg-white rounded-xl border shadow-sm ${
+      isAccepted ? 'border-green-200 bg-green-50/50' : 'border-gray-100'
+    }`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
@@ -534,30 +1016,37 @@ function EventCard({ event, onAction }: {
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
-        <button
-          onClick={() => onAction(event.id, 'accepted')}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100"
-        >
-          📅 Add to Calendar
-        </button>
-        {event.url && (
-          <a
-            href={event.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium active:bg-gray-100"
+
+      {!isAccepted ? (
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
+          <button
+            onClick={() => onAction(event.id, 'accepted')}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100"
           >
-            🔗
-          </a>
-        )}
-        <button
-          onClick={() => onAction(event.id, 'dismissed')}
-          className="px-3 py-1.5 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium active:bg-gray-100"
-        >
-          ✕
-        </button>
-      </div>
+            📅 Add to Calendar
+          </button>
+          {event.url && (
+            <a
+              href={event.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium active:bg-gray-100"
+            >
+              🔗
+            </a>
+          )}
+          <button
+            onClick={() => onAction(event.id, 'dismissed')}
+            className="px-3 py-1.5 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium active:bg-gray-100"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-green-100">
+          <span className="text-xs text-green-600 font-medium">✓ Added to calendar</span>
+        </div>
+      )}
     </div>
   );
 }
