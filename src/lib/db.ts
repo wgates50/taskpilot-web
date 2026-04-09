@@ -389,6 +389,31 @@ export async function updatePlaceScoring(
   if (updates.liked !== undefined) await sql`UPDATE places SET liked = ${updates.liked}, updated_at = NOW() WHERE id = ${id}`;
 }
 
+export async function updatePlaceEnrichment(
+  id: string,
+  updates: Partial<Pick<PlaceRow,
+    'lat' | 'lng' | 'google_place_id' | 'google_rating' | 'address' | 'price_tier' |
+    'vibe_tags' | 'weather_tags' | 'social_tags' | 'day_tags' | 'time_tags' | 'season_tags' |
+    'duration' | 'enriched_at'
+  >>
+): Promise<void> {
+  // Enrichment fields — each updated individually (tagged template requirement)
+  if (updates.lat !== undefined) await sql`UPDATE places SET lat = ${updates.lat}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.lng !== undefined) await sql`UPDATE places SET lng = ${updates.lng}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.google_place_id !== undefined) await sql`UPDATE places SET google_place_id = ${updates.google_place_id}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.google_rating !== undefined) await sql`UPDATE places SET google_rating = ${updates.google_rating}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.address !== undefined) await sql`UPDATE places SET address = ${updates.address}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.price_tier !== undefined) await sql`UPDATE places SET price_tier = ${updates.price_tier}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.vibe_tags !== undefined) await sql`UPDATE places SET vibe_tags = ${JSON.stringify(updates.vibe_tags)}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.weather_tags !== undefined) await sql`UPDATE places SET weather_tags = ${JSON.stringify(updates.weather_tags)}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.social_tags !== undefined) await sql`UPDATE places SET social_tags = ${JSON.stringify(updates.social_tags)}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.day_tags !== undefined) await sql`UPDATE places SET day_tags = ${JSON.stringify(updates.day_tags)}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.time_tags !== undefined) await sql`UPDATE places SET time_tags = ${JSON.stringify(updates.time_tags)}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.season_tags !== undefined) await sql`UPDATE places SET season_tags = ${JSON.stringify(updates.season_tags)}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.duration !== undefined) await sql`UPDATE places SET duration = ${updates.duration}, updated_at = NOW() WHERE id = ${id}`;
+  if (updates.enriched_at !== undefined) await sql`UPDATE places SET enriched_at = ${updates.enriched_at}, updated_at = NOW() WHERE id = ${id}`;
+}
+
 export async function getPlacesCount(): Promise<number> {
   const result = await sql`SELECT COUNT(*) as count FROM places`;
   return Number(result.rows[0].count);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPlaces, upsertPlace, getPlacesStats, updatePlaceScoring } from '@/lib/db';
+import { getPlaces, upsertPlace, getPlacesStats, updatePlaceScoring, updatePlaceEnrichment } from '@/lib/db';
 import { verifyApiKey } from '@/lib/auth';
 
 // GET /api/places — list/filter places (used by Planning tab + tasks)
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH /api/places — update scoring metadata (used by app actions)
+// PATCH /api/places — update scoring OR enrichment metadata
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
@@ -76,7 +76,33 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 });
     }
 
-    await updatePlaceScoring(id, updates);
+    // Enrichment fields — route to updatePlaceEnrichment
+    const enrichmentKeys = new Set([
+      'lat', 'lng', 'google_place_id', 'google_rating', 'address', 'price_tier',
+      'vibe_tags', 'weather_tags', 'social_tags', 'day_tags', 'time_tags', 'season_tags',
+      'duration', 'enriched_at',
+    ]);
+    // Scoring fields — route to updatePlaceScoring
+    const scoringKeys = new Set([
+      'times_suggested', 'times_accepted', 'times_dismissed', 'times_visited',
+      'last_suggested', 'last_visited', 'liked',
+    ]);
+
+    const enrichmentUpdates: Record<string, unknown> = {};
+    const scoringUpdates: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (enrichmentKeys.has(key)) enrichmentUpdates[key] = value;
+      else if (scoringKeys.has(key)) scoringUpdates[key] = value;
+    }
+
+    if (Object.keys(enrichmentUpdates).length > 0) {
+      await updatePlaceEnrichment(id, enrichmentUpdates as Parameters<typeof updatePlaceEnrichment>[1]);
+    }
+    if (Object.keys(scoringUpdates).length > 0) {
+      await updatePlaceScoring(id, scoringUpdates as Parameters<typeof updatePlaceScoring>[1]);
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('PATCH /api/places error:', err);
