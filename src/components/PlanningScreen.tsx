@@ -52,6 +52,8 @@ interface PlaceRecord {
   weather_tags: string[];
   social_tags: string[];
   cuisine_tags: string[];
+  day_tags: string[];
+  season_tags: string[];
   price_tier: string | null;
   booking_type: string | null;
   duration: string | null;
@@ -109,13 +111,28 @@ interface WeatherData {
 // ── Constants ────────────────────────────────────────────
 
 const CATEGORY_EMOJI: Record<string, string> = {
+  // High-level taxonomy
   'Food & Drink': '🍽️',
   'Culture & Entertainment': '🎭',
   'Shopping & Markets': '🛍️',
   'Outdoors & Leisure': '🌳',
   'Wellness': '💆',
-  art: '🎨', theatre: '🎭', markets: '🛍️', film: '🎬',
-  music: '🎵', food: '🍽️', comedy: '🎤', history: '👑',
+  // Notion source categories (lowercase from data sync)
+  restaurant: '🍽️', restaurants: '🍽️',
+  pub: '🍺', pubs: '🍺', bar: '🍸', bars: '🍸',
+  cafe: '☕', cafes: '☕', coffee: '☕',
+  bakery: '🥐', dessert: '🍰',
+  // Culture & entertainment
+  art: '🎨', theatre: '🎭', film: '🎬',
+  music: '🎵', comedy: '🎤', history: '👑',
+  museum: '🏛️', gallery: '🖼️', cinema: '🎬',
+  // Shopping & markets
+  markets: '🛍️', market: '🛍️', shop: '🛒', shopping: '🛍️',
+  // Outdoors
+  park: '🌳', garden: '🌷', walk: '🚶', outdoor: '🌳',
+  // Other
+  wellness: '💆', spa: '💆', fitness: '💪',
+  'Uncategorised': '📍',
 };
 
 const BOOKING_LABELS: Record<string, { label: string; color: string }> = {
@@ -263,11 +280,24 @@ function scorePlace(
 ): { score: number; reasons: Record<string, number> } {
   const reasons: Record<string, number> = {};
 
-  // Interest score (30%) — use google_rating + liked + visit history
-  let interest = 50;
-  if (place.google_rating) interest = Math.min(100, (place.google_rating / 5) * 80 + 20);
-  if (place.liked) interest = Math.min(100, interest + 20);
-  if (place.times_visited > 3) interest = Math.max(20, interest - 15); // diminishing returns
+  // Interest score (30%) — use google_rating + liked + visit history + data richness
+  let interest = 40;
+  if (place.google_rating) {
+    interest = Math.min(100, (place.google_rating / 5) * 80 + 20);
+  } else {
+    // No rating — add randomised jitter (0–25) to avoid flat ordering
+    // Use a hash of the place name for deterministic "randomness" per session
+    const hash = place.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    interest = 35 + (hash % 25);
+  }
+  if (place.liked) interest = Math.min(100, interest + 25);
+  if (place.times_visited > 3) interest = Math.max(20, interest - 15);
+  // Data richness bonus — places with more tags are more confidently scored
+  const tagCount = (place.vibe_tags?.length || 0) + (place.time_tags?.length || 0) +
+    (place.weather_tags?.length || 0) + (place.social_tags?.length || 0) +
+    (place.cuisine_tags?.length || 0);
+  if (tagCount > 5) interest = Math.min(100, interest + 10);
+  else if (tagCount > 0) interest = Math.min(100, interest + 5);
   reasons.interest = interest;
 
   // Weather score (20%) — match weather_tags to current conditions
@@ -328,7 +358,9 @@ function scorePlace(
 
   // Season score (5%)
   let seasonScore = 50;
-  if (place.vibe_tags?.includes(season)) seasonScore = 85;
+  const st2 = place.season_tags || [];
+  if (st2.includes(season)) seasonScore = 85;
+  else if (st2.length === 0) seasonScore = 50; // no tags = neutral
   reasons.season = seasonScore;
 
   // Weighted total
@@ -375,15 +407,22 @@ function useGeoLocation(onUpdate: (lat: number, lng: number, area: string) => vo
       }
     };
 
+    const handleError = (err: GeolocationPositionError) => {
+      if (err.code === err.PERMISSION_DENIED) {
+        // Signal GPS denied — the component will pick this up via a custom event
+        window.dispatchEvent(new CustomEvent('gps-denied'));
+      }
+    };
+
     // Initial position
-    navigator.geolocation.getCurrentPosition(handlePosition, () => {}, {
+    navigator.geolocation.getCurrentPosition(handlePosition, handleError, {
       enableHighAccuracy: false,
       timeout: 10000,
       maximumAge: 300000, // 5 min cache
     });
 
     // Watch for movement
-    watchRef.current = navigator.geolocation.watchPosition(handlePosition, () => {}, {
+    watchRef.current = navigator.geolocation.watchPosition(handlePosition, handleError, {
       enableHighAccuracy: false,
       timeout: 15000,
       maximumAge: 300000,
@@ -430,6 +469,13 @@ export function PlanningScreen() {
   }, []);
 
   useGeoLocation(handleGeoUpdate);
+
+  // Listen for GPS denial
+  useEffect(() => {
+    const handler = () => setGpsStatus('denied');
+    window.addEventListener('gps-denied', handler);
+    return () => window.removeEventListener('gps-denied', handler);
+  }, []);
 
   // Fetch weather on mount and when location changes
   useEffect(() => {
@@ -510,6 +556,12 @@ export function PlanningScreen() {
       }
 
       const { places } = await placesRes.json() as { places: PlaceRecord[] };
+
+      if (!places || places.length === 0) {
+        // No places in DB yet — can't score
+        await fetchData();
+        return;
+      }
 
       // Score every place
       const scored = places.map(p => {
@@ -826,7 +878,6 @@ export function PlanningScreen() {
                       suggestion={s}
                       onAction={handleAction}
                       calendarAdding={calendarAdding}
-                      dateKey={dateKey}
                     />
                   ))}
                 </div>
@@ -862,24 +913,32 @@ export function PlanningScreen() {
 
 // ── Card Components ───────────────────────────────────────
 
-function SuggestionCard({ suggestion: s, onAction, calendarAdding, dateKey }: {
+function SuggestionCard({ suggestion: s, onAction, calendarAdding }: {
   suggestion: Suggestion;
   onAction: (id: number, placeId: string, action: 'accepted' | 'dismissed') => void;
   calendarAdding: string | null;
-  dateKey: string;
 }) {
-  const emoji = CATEGORY_EMOJI[s.category] || '📍';
+  const [showReasons, setShowReasons] = useState(false);
+  const emoji = CATEGORY_EMOJI[s.category] || CATEGORY_EMOJI[s.category?.toLowerCase()] || '📍';
   const booking = s.booking_type ? BOOKING_LABELS[s.booking_type] : null;
   const isAccepted = s.status === 'accepted';
   const isLocal = s.id < 0; // locally scored, not from server
 
-  // Top scoring reason
-  const topReason = s.scoring_reasons
-    ? Object.entries(s.scoring_reasons)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 2)
-        .map(([k, v]) => `${k}: ${Math.round(v as number)}`)
-        .join(', ')
+  // Top scoring reasons sorted by weight
+  const reasonEntries = s.scoring_reasons
+    ? Object.entries(s.scoring_reasons).sort(([, a], [, b]) => (b as number) - (a as number))
+    : [];
+  const topReasonLabel = reasonEntries.length > 0
+    ? reasonEntries.slice(0, 1).map(([k, v]) => {
+        const score = Math.round(v as number);
+        if (k === 'weather' && score > 70) return '🌤 Great for this weather';
+        if (k === 'time' && score > 70) return '⏰ Good for right now';
+        if (k === 'location' && score > 70) return '📍 Nearby';
+        if (k === 'social' && score > 70) return '👥 Good for your group';
+        if (k === 'novelty' && score > 70) return '✨ Somewhere new';
+        if (k === 'interest' && score > 70) return '⭐ Highly rated';
+        return null;
+      }).filter(Boolean)[0]
     : null;
 
   return (
@@ -914,11 +973,16 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, dateKey }: {
             {s.liked && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-100 text-pink-700 font-medium">♡ Liked</span>
             )}
-            {s.score > 0 && (
-              <span className="text-[10px] text-gray-400">Score: {Math.round(s.score)}</span>
+            {topReasonLabel && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">{topReasonLabel}</span>
             )}
-            {topReason && (
-              <span className="text-[10px] text-gray-300 hidden">{topReason}</span>
+            {s.score > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowReasons(!showReasons); }}
+                className="text-[10px] text-gray-400 hover:text-gray-600"
+              >
+                Score: {Math.round(s.score)} {showReasons ? '▲' : '▼'}
+              </button>
             )}
           </div>
         </div>
@@ -941,6 +1005,19 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, dateKey }: {
           )}
         </div>
       </div>
+
+      {/* Scoring breakdown (expandable) */}
+      {showReasons && reasonEntries.length > 0 && (
+        <div className="mt-1.5 px-1 flex flex-wrap gap-x-3 gap-y-0.5">
+          {reasonEntries.map(([k, v]) => (
+            <span key={k} className="text-[10px] text-gray-400">
+              {k} <span className={`font-medium ${(v as number) > 70 ? 'text-green-600' : (v as number) < 40 ? 'text-red-400' : 'text-gray-500'}`}>
+                {Math.round(v as number)}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Actions */}
       {!isAccepted && (
@@ -983,7 +1060,7 @@ function EventCard({ event, onAction }: {
   event: CachedEvent;
   onAction: (id: string, action: 'accepted' | 'dismissed') => void;
 }) {
-  const emoji = event.category ? (CATEGORY_EMOJI[event.category] || '📅') : '📅';
+  const emoji = event.category ? (CATEGORY_EMOJI[event.category] || CATEGORY_EMOJI[event.category.toLowerCase()] || '📅') : '📅';
   const isClosingSoon = event.closing_date && new Date(event.closing_date) <= new Date(Date.now() + 7 * 86400000);
   const isAccepted = event.status === 'accepted';
 
