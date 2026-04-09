@@ -368,25 +368,29 @@ export async function updatePlaceScoring(
   id: string,
   updates: Partial<Pick<PlaceRow, 'times_suggested' | 'times_accepted' | 'times_dismissed' | 'times_visited' | 'last_suggested' | 'last_visited' | 'liked'>>
 ): Promise<void> {
-  // Build dynamic update — only set provided fields
-  const sets: string[] = [];
-  const vals: unknown[] = [];
-  if (updates.times_suggested !== undefined) { sets.push('times_suggested'); vals.push(updates.times_suggested); }
-  if (updates.times_accepted !== undefined) { sets.push('times_accepted'); vals.push(updates.times_accepted); }
-  if (updates.times_dismissed !== undefined) { sets.push('times_dismissed'); vals.push(updates.times_dismissed); }
-  if (updates.times_visited !== undefined) { sets.push('times_visited'); vals.push(updates.times_visited); }
-  if (updates.last_suggested !== undefined) { sets.push('last_suggested'); vals.push(updates.last_suggested); }
-  if (updates.last_visited !== undefined) { sets.push('last_visited'); vals.push(updates.last_visited); }
-  if (updates.liked !== undefined) { sets.push('liked'); vals.push(updates.liked); }
+  // Single query: use COALESCE to conditionally update only provided fields
+  // @vercel/postgres tagged templates require known placeholders, so we pass all
+  // fields and use COALESCE to keep the existing value when null is passed.
+  const ts = updates.times_suggested ?? null;
+  const ta = updates.times_accepted ?? null;
+  const td = updates.times_dismissed ?? null;
+  const tv = updates.times_visited ?? null;
+  const ls = updates.last_suggested ?? null;
+  const lv = updates.last_visited ?? null;
+  const lk = updates.liked ?? null;
 
-  // Use individual queries for each field since @vercel/postgres uses tagged templates
-  if (updates.times_suggested !== undefined) await sql`UPDATE places SET times_suggested = ${updates.times_suggested}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.times_accepted !== undefined) await sql`UPDATE places SET times_accepted = ${updates.times_accepted}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.times_dismissed !== undefined) await sql`UPDATE places SET times_dismissed = ${updates.times_dismissed}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.times_visited !== undefined) await sql`UPDATE places SET times_visited = ${updates.times_visited}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.last_suggested !== undefined) await sql`UPDATE places SET last_suggested = ${updates.last_suggested}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.last_visited !== undefined) await sql`UPDATE places SET last_visited = ${updates.last_visited}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.liked !== undefined) await sql`UPDATE places SET liked = ${updates.liked}, updated_at = NOW() WHERE id = ${id}`;
+  await sql`
+    UPDATE places SET
+      times_suggested = COALESCE(${ts}::int, times_suggested),
+      times_accepted  = COALESCE(${ta}::int, times_accepted),
+      times_dismissed = COALESCE(${td}::int, times_dismissed),
+      times_visited   = COALESCE(${tv}::int, times_visited),
+      last_suggested  = COALESCE(${ls}::timestamptz, last_suggested),
+      last_visited    = COALESCE(${lv}::timestamptz, last_visited),
+      liked           = COALESCE(${lk}::bool, liked),
+      updated_at      = NOW()
+    WHERE id = ${id}
+  `;
 }
 
 export async function updatePlaceEnrichment(
@@ -397,21 +401,41 @@ export async function updatePlaceEnrichment(
     'duration' | 'enriched_at'
   >>
 ): Promise<void> {
-  // Enrichment fields — each updated individually (tagged template requirement)
-  if (updates.lat !== undefined) await sql`UPDATE places SET lat = ${updates.lat}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.lng !== undefined) await sql`UPDATE places SET lng = ${updates.lng}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.google_place_id !== undefined) await sql`UPDATE places SET google_place_id = ${updates.google_place_id}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.google_rating !== undefined) await sql`UPDATE places SET google_rating = ${updates.google_rating}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.address !== undefined) await sql`UPDATE places SET address = ${updates.address}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.price_tier !== undefined) await sql`UPDATE places SET price_tier = ${updates.price_tier}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.vibe_tags !== undefined) await sql`UPDATE places SET vibe_tags = ${JSON.stringify(updates.vibe_tags)}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.weather_tags !== undefined) await sql`UPDATE places SET weather_tags = ${JSON.stringify(updates.weather_tags)}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.social_tags !== undefined) await sql`UPDATE places SET social_tags = ${JSON.stringify(updates.social_tags)}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.day_tags !== undefined) await sql`UPDATE places SET day_tags = ${JSON.stringify(updates.day_tags)}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.time_tags !== undefined) await sql`UPDATE places SET time_tags = ${JSON.stringify(updates.time_tags)}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.season_tags !== undefined) await sql`UPDATE places SET season_tags = ${JSON.stringify(updates.season_tags)}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.duration !== undefined) await sql`UPDATE places SET duration = ${updates.duration}, updated_at = NOW() WHERE id = ${id}`;
-  if (updates.enriched_at !== undefined) await sql`UPDATE places SET enriched_at = ${updates.enriched_at}, updated_at = NOW() WHERE id = ${id}`;
+  // Single query with COALESCE — only updates fields that are explicitly provided
+  const lat = updates.lat ?? null;
+  const lng = updates.lng ?? null;
+  const gpid = updates.google_place_id ?? null;
+  const grating = updates.google_rating ?? null;
+  const addr = updates.address ?? null;
+  const ptier = updates.price_tier ?? null;
+  const vtags = updates.vibe_tags ? JSON.stringify(updates.vibe_tags) : null;
+  const wtags = updates.weather_tags ? JSON.stringify(updates.weather_tags) : null;
+  const stags = updates.social_tags ? JSON.stringify(updates.social_tags) : null;
+  const dtags = updates.day_tags ? JSON.stringify(updates.day_tags) : null;
+  const ttags = updates.time_tags ? JSON.stringify(updates.time_tags) : null;
+  const setags = updates.season_tags ? JSON.stringify(updates.season_tags) : null;
+  const dur = updates.duration ?? null;
+  const eat = updates.enriched_at ?? null;
+
+  await sql`
+    UPDATE places SET
+      lat             = COALESCE(${lat}::double precision, lat),
+      lng             = COALESCE(${lng}::double precision, lng),
+      google_place_id = COALESCE(${gpid}::text, google_place_id),
+      google_rating   = COALESCE(${grating}::numeric, google_rating),
+      address         = COALESCE(${addr}::text, address),
+      price_tier      = COALESCE(${ptier}::text, price_tier),
+      vibe_tags       = COALESCE(${vtags}::jsonb, vibe_tags),
+      weather_tags    = COALESCE(${wtags}::jsonb, weather_tags),
+      social_tags     = COALESCE(${stags}::jsonb, social_tags),
+      day_tags        = COALESCE(${dtags}::jsonb, day_tags),
+      time_tags       = COALESCE(${ttags}::jsonb, time_tags),
+      season_tags     = COALESCE(${setags}::jsonb, season_tags),
+      duration        = COALESCE(${dur}::text, duration),
+      enriched_at     = COALESCE(${eat}::timestamptz, enriched_at),
+      updated_at      = NOW()
+    WHERE id = ${id}
+  `;
 }
 
 export async function getPlacesCount(): Promise<number> {

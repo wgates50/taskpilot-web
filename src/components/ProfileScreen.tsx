@@ -157,12 +157,7 @@ export function ProfileScreen() {
                     <p className="text-[13px] font-medium text-gray-800">{v.name}</p>
                     <p className="text-[11px] text-gray-400">{v.type}</p>
                   </div>
-                  <span className="text-[11px] text-gray-400">
-                    {v.frequency === 'weekly' ? 'Weekly regular'
-                      : v.frequency === 'monthly' ? 'Monthly visit'
-                      : v.frequency === 'occasional' ? 'Occasional'
-                      : v.frequency || 'Saved'}
-                  </span>
+                  <span className="text-[11px] text-gray-400">{v.frequency}</span>
                 </div>
               ))
             )}

@@ -36,16 +36,20 @@ function getRelativeTime(isoString: string): string {
 }
 
 function getMessagePreview(blocks: unknown[]): string {
-  for (const block of blocks as Array<{ type: string; data?: Record<string, unknown> }>) {
-    if (!block.data) continue;
-    if (block.type === 'text') return String(block.data.text ?? '').split('\n')[0].slice(0, 80);
-    if (block.type === 'header') return String(block.data.text ?? '').slice(0, 80);
-    if (block.type === 'weather_card') return `${block.data.conditions ?? ''}, ${block.data.temp ?? ''}°C`;
-    if (block.type === 'event_card') return String(block.data.title ?? '');
-    if (block.type === 'article_card') return String(block.data.title ?? '');
-    if (block.type === 'finance_card') return `£${Number(block.data.totalSpend ?? 0).toFixed(0)} spent this week`;
-    if (block.type === 'calendar_preview') return 'Week preview';
-    if (block.type === 'job_card') return String(block.data.title || block.data.role || '');
+  for (const raw of blocks as Array<Record<string, unknown>>) {
+    const type = raw.type as string;
+    // Handle blocks with data nested in .data or directly on the block
+    const data = (raw.data as Record<string, unknown>) || raw;
+    const getText = (): string => String(data.text ?? data.content ?? data.title ?? '');
+
+    if (type === 'text') return getText().split('\n')[0].slice(0, 80);
+    if (type === 'header') return getText().slice(0, 80);
+    if (type === 'weather_card') return `${data.conditions}, ${data.temp}\u00B0C`;
+    if (type === 'event_card') return String(data.title);
+    if (type === 'article_card') return String(data.title);
+    if (type === 'finance_card') return `\u00A3${Number(data.totalSpend).toFixed(0)} spent this week`;
+    if (type === 'calendar_preview') return 'Week preview';
+    if (type === 'job_card') return String(data.title || data.role);
   }
   return 'New message';
 }
@@ -54,8 +58,9 @@ export function ThreadsScreen({ latestMessages, unreads, pins, onOpenThread, onT
   const [bgCollapsed, setBgCollapsed] = useState(false);
   const [longPressId, setLongPressId] = useState<string | null>(null);
 
-  const mainTasks = TASKS.filter(t => t.tier === 'main');
-  const bgTasks = TASKS.filter(t => t.tier === 'background');
+  const mainTasks = TASKS.filter(t => t.tier === 'main' && !t.retired);
+  const bgTasks = TASKS.filter(t => t.tier === 'background' && !t.retired);
+  const retiredTasks = TASKS.filter(t => t.retired);
 
   // Sort: pinned first, then by latest message time
   const sortByRecency = (tasks: TaskMeta[]) => {

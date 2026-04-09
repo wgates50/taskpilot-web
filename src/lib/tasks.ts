@@ -95,6 +95,21 @@ export const TASKS: TaskMeta[] = [
     dependents: [],
     quickReplies: ['Apply', 'Save', 'Not relevant', 'More like this'],
   },
+  // --- Retired tasks (still visible for message history) ---
+  {
+    id: 'activity-suggester',
+    name: 'Activity Suggester (v2)',
+    icon: '\uD83C\uDFAF',
+    description: 'Legacy — 10 fixed venues scored against weather + calendar. Replaced by Activity Engine.',
+    schedule: 'Retired',
+    cronExpression: '',
+    group: 'activity',
+    tier: 'background',
+    dependencies: [],
+    dependents: [],
+    quickReplies: ['Sounds good!', 'Not today'],
+    retired: true,
+  },
   // --- Background tasks ---
   {
     id: 'email-to-calendar',
@@ -145,7 +160,7 @@ export const TASKS: TaskMeta[] = [
     group: 'calendar',
     tier: 'background',
     dependencies: [],
-    dependents: ['morning-brief', 'activity-suggester'],
+    dependents: ['morning-brief', 'daily-activity-engine'],
     quickReplies: ['Add to calendar', 'Save for later', 'Been already'],
   },
   {

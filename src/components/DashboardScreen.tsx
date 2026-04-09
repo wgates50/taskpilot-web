@@ -8,7 +8,7 @@ type View = 'list' | 'relationships';
 export function DashboardScreen() {
   const [view, setView] = useState<View>('list');
 
-  const groups = ['calendar', 'reading', 'finance', 'career'] as const;
+  const groups = ['calendar', 'activity', 'reading', 'finance', 'career'] as const;
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -42,7 +42,7 @@ export function DashboardScreen() {
           <div className="space-y-4 mt-3">
             {groups.map(groupId => {
               const group = TASK_GROUPS[groupId];
-              const tasks = TASKS.filter(t => t.group === groupId);
+              const tasks = TASKS.filter(t => t.group === groupId && !t.retired);
               return (
                 <div key={groupId}>
                   <div className="flex items-center gap-2 mb-2">
@@ -90,7 +90,16 @@ function RelationshipView() {
       color: '#3B82F6',
       flow: [
         { tasks: ['email-to-calendar', 'weekly-london-event-scanner', 'london-openings-scanner'], label: 'Data Collection' },
-        { tasks: ['morning-brief', 'activity-suggester', 'weekly-planner'], label: 'Delivery' },
+        { tasks: ['morning-brief', 'weekly-planner'], label: 'Delivery' },
+      ],
+    },
+    {
+      name: 'Activity Pipeline',
+      color: '#EC4899',
+      flow: [
+        { tasks: ['data-sync-engine'], label: 'Data Sync' },
+        { tasks: ['daily-activity-engine'], label: 'Scoring' },
+        { tasks: ['visit-review'], label: 'Feedback' },
       ],
     },
     {
@@ -142,7 +151,7 @@ function RelationshipView() {
       <div className="rounded-xl border-2 border-dashed border-gray-200 p-3 mt-4">
         <p className="text-[13px] font-semibold text-gray-600 mb-1">Shared: Taste Profile</p>
         <p className="text-[11px] text-gray-400">
-          Used by Morning Brief, Activity Suggester, Reading Digest, Event Scanner, and Weekly Planner to personalise recommendations.
+          Used by Morning Brief, Activity Engine, Reading Digest, Event Scanner, and Weekly Planner to personalise recommendations.
         </p>
       </div>
     </div>
