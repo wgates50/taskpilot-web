@@ -41,6 +41,14 @@ export async function POST(req: NextRequest) {
         `).rows[0];
 
         if (existing) {
+          // Both rows present — repoint FK children onto the undashed id
+          // before we touch either row. Both ids are valid at this moment
+          // so suggestions_place_id_fkey / visit_reviews_place_id_fkey hold.
+          await sql`UPDATE suggestions  SET place_id = ${undashedId} WHERE place_id = ${dashedId}`;
+          await sql`UPDATE visit_reviews SET place_id = ${undashedId} WHERE place_id = ${dashedId}`;
+        }
+
+        if (existing) {
           // MERGE: pull any field from dashed row that the undashed row lacks.
           // Addresses the case where sync populated dashed row first and
           // enrichment went into the undashed twin (or vice versa).
@@ -74,8 +82,32 @@ export async function POST(req: NextRequest) {
           await sql`DELETE FROM places WHERE id = ${dashedId}`;
           merged += 1;
         } else {
-          // No counterpart — just rename the id in-place
-          await sql`UPDATE places SET id = ${undashedId}, updated_at = NOW() WHERE id = ${dashedId}`;
+          // No counterpart — copy row to undashed id, repoint FK children,
+          // then delete the dashed row.
+          // INSERT ... SELECT copies every column except id (which we override).
+          await sql`
+            INSERT INTO places (
+              id, notion_page_id, name, category, subcategory, cuisine_tags,
+              area, address, lat, lng, google_maps_url, website, google_rating,
+              vibe_tags, time_tags, weather_tags, social_tags, day_tags, season_tags,
+              price_tier, booking_type, duration, opening_hours, notes,
+              times_suggested, times_accepted, times_dismissed, times_visited,
+              last_suggested, last_visited, liked, source, google_place_id, enriched_at,
+              created_at, updated_at
+            )
+            SELECT
+              ${undashedId}, notion_page_id, name, category, subcategory, cuisine_tags,
+              area, address, lat, lng, google_maps_url, website, google_rating,
+              vibe_tags, time_tags, weather_tags, social_tags, day_tags, season_tags,
+              price_tier, booking_type, duration, opening_hours, notes,
+              times_suggested, times_accepted, times_dismissed, times_visited,
+              last_suggested, last_visited, liked, source, google_place_id, enriched_at,
+              created_at, NOW()
+            FROM places WHERE id = ${dashedId}
+          `;
+          await sql`UPDATE suggestions  SET place_id = ${undashedId} WHERE place_id = ${dashedId}`;
+          await sql`UPDATE visit_reviews SET place_id = ${undashedId} WHERE place_id = ${dashedId}`;
+          await sql`DELETE FROM places WHERE id = ${dashedId}`;
           renamed += 1;
         }
       } catch (err) {
