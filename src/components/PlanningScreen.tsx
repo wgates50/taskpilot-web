@@ -475,8 +475,73 @@ export function PlanningScreen() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [gpsStatus, setGpsStatus] = useState<'waiting' | 'active' | 'denied'>('waiting');
   const [calendarAdding, setCalendarAdding] = useState<string | null>(null);
+  const [dismissedBonusKeys, setDismissedBonusKeys] = useState<Set<string>>(new Set());
+  // Full 290-place DB, fetched once per mount — used for bonus-pick lookups
+  // when an accepted suggestion anchors a day to a specific location.
+  const [allPlaces, setAllPlaces] = useState<PlaceRecord[]>([]);
 
   const { dates, label: weekLabel } = getWeekDates(weekOffset);
+
+  // Handler for a "bonus pick" (client-side, derived from accepting an anchor).
+  // Opens Google Calendar with the place details and injects a synthetic
+  // accepted suggestion into local state so the card disappears and can itself
+  // anchor further re-suggestions.
+  const handleBonusAdd = useCallback(
+    (place: PlaceRecord, anchor: Suggestion, dateKey: string) => {
+      const calUrl = buildCalendarUrl(
+        place.name,
+        place.area,
+        place.address,
+        dateKey,
+        place.duration
+      );
+      window.open(calUrl, '_blank');
+      const syntheticId = -Math.floor(Math.random() * 1_000_000) - 1000;
+      const synthetic: Suggestion = {
+        id: syntheticId,
+        place_id: place.id,
+        suggestion_date: dateKey,
+        suggested_for: anchor.suggested_for,
+        score: 0,
+        scoring_reasons: { nearby_bonus: 15 },
+        status: 'accepted',
+        name: place.name,
+        category: place.category,
+        subcategory: place.subcategory,
+        area: place.area,
+        address: place.address,
+        lat: place.lat,
+        lng: place.lng,
+        google_maps_url: place.google_maps_url,
+        website: place.website,
+        google_rating: place.google_rating,
+        vibe_tags: place.vibe_tags,
+        time_tags: place.time_tags,
+        weather_tags: place.weather_tags,
+        social_tags: place.social_tags,
+        price_tier: place.price_tier,
+        booking_type: place.booking_type,
+        duration: place.duration,
+        notes: place.notes,
+        times_visited: place.times_visited,
+        liked: place.liked,
+        cuisine_tags: place.cuisine_tags,
+      };
+      setSuggestions(prev => ({
+        ...prev,
+        [dateKey]: [...(prev[dateKey] || []), synthetic],
+      }));
+    },
+    []
+  );
+
+  const handleBonusDismiss = useCallback((place: PlaceRecord, dateKey: string) => {
+    setDismissedBonusKeys(prev => {
+      const next = new Set(prev);
+      next.add(`${dateKey}::${place.id}`);
+      return next;
+    });
+  }, []);
 
   // GPS integration
   const handleGeoUpdate = useCallback(async (lat: number, lng: number, area: string) => {
@@ -555,6 +620,23 @@ export function PlanningScreen() {
   }, [weekOffset]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // One-shot places fetch — the whole DB, cached for the session, used by
+  // the bonus-pick "re-suggest near your calendar" feature.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/places?limit=500');
+        if (!res.ok) return;
+        const data = await res.json() as { places: PlaceRecord[] };
+        if (!cancelled) setAllPlaces(data.places || []);
+      } catch (e) {
+        console.error('Failed to fetch all places for bonus picks:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Client-side rescoring ("Suggest Now") ──────────────
 
@@ -855,7 +937,8 @@ export function PlanningScreen() {
               </div>
             )}
 
-            {/* Day-by-day suggestions */}
+            {/* Day-by-day suggestions — responsive grid: 1 col mobile, 2 lg, 3 xl */}
+            <div className="mt-2 lg:grid lg:grid-cols-2 lg:gap-x-4 xl:grid-cols-3">
             {dates.map(date => {
               const dateKey = formatDate(date);
               const daySuggestions = suggestions[dateKey] || [];
@@ -867,6 +950,50 @@ export function PlanningScreen() {
               const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
               const dayNumber = date.getDate();
               const weekdayShort = date.toLocaleDateString('en-GB', { weekday: 'short' });
+
+              // Anchors for this day — any accepted suggestion with a location.
+              // These act as "you'll already be around here" pins that boost nearby picks.
+              const dayAnchors = daySuggestions.filter(
+                s => s.status === 'accepted' && s.lat != null && s.lng != null
+              );
+
+              // Compute bonus picks from the full 290-place DB:
+              // when an anchor is set, find up to 2 nearby places (<600m) that
+              // are (a) not already in today's suggestions, (b) a different
+              // category to the anchor, (c) preferably liked. These become
+              // "Near your [anchor]" bonus cards.
+              type BonusPick = { place: PlaceRecord; anchor: Suggestion; km: number };
+              const usedPlaceIds = new Set(daySuggestions.map(s => s.place_id));
+              const bonusPicksByBucket: Record<string, BonusPick[]> = {};
+              for (const anchor of dayAnchors) {
+                const anchorBucket = bucketFor(anchor.suggested_for);
+                const nearby = allPlaces
+                  .filter(p =>
+                    p.lat != null && p.lng != null &&
+                    p.id !== anchor.place_id &&
+                    !usedPlaceIds.has(p.id) &&
+                    !dismissedBonusKeys.has(`${dateKey}::${p.id}`) &&
+                    p.category !== anchor.category &&
+                    haversineKm(p.lat, p.lng, anchor.lat!, anchor.lng!) < 0.6
+                  )
+                  .map(p => ({
+                    place: p,
+                    anchor,
+                    km: haversineKm(p.lat!, p.lng!, anchor.lat!, anchor.lng!),
+                  }))
+                  .sort((a, b) => {
+                    // Prefer liked places, then closer ones
+                    if (a.place.liked !== b.place.liked) return a.place.liked ? -1 : 1;
+                    if ((a.place.google_rating || 0) !== (b.place.google_rating || 0))
+                      return (b.place.google_rating || 0) - (a.place.google_rating || 0);
+                    return a.km - b.km;
+                  })
+                  .slice(0, 2);
+                for (const n of nearby) {
+                  (bonusPicksByBucket[anchorBucket] ||= []).push(n);
+                  usedPlaceIds.add(n.place.id); // don't re-suggest same place via another anchor
+                }
+              }
 
               // Empty day — single-line tight row
               if (daySuggestions.length === 0 && dayEvents.length === 0) {
@@ -887,19 +1014,43 @@ export function PlanningScreen() {
                 );
               }
 
-              // Group suggestions by time-of-day bucket
-              const byBucket: Record<string, Suggestion[]> = {};
+              // Find nearest anchor (within 1.5km) for a suggestion — returns
+              // the anchor + distance so the card can badge it and we can re-sort.
+              const findNearbyAnchor = (
+                s: Suggestion
+              ): { anchor: Suggestion; km: number } | null => {
+                if (!s.lat || !s.lng || dayAnchors.length === 0) return null;
+                let best: { anchor: Suggestion; km: number } | null = null;
+                for (const a of dayAnchors) {
+                  if (a.id === s.id) continue;
+                  const km = haversineKm(s.lat, s.lng, a.lat!, a.lng!);
+                  if (km > 1.5) continue;
+                  if (!best || km < best.km) best = { anchor: a, km };
+                }
+                return best;
+              };
+
+              // Group suggestions by time-of-day bucket, with accepted pinned first
+              const byBucket: Record<string, Array<{ s: Suggestion; nearby: ReturnType<typeof findNearbyAnchor>; adjScore: number }>> = {};
               for (const s of daySuggestions) {
                 const b = bucketFor(s.suggested_for);
-                (byBucket[b] ||= []).push(s);
+                const nearby = findNearbyAnchor(s);
+                // Boost score for cards within walking distance of an anchor
+                const boost = nearby ? 15 - nearby.km * 5 : 0; // ~15 at 0km, ~7.5 at 1.5km
+                const adjScore = Number(s.score) + boost;
+                (byBucket[b] ||= []).push({ s, nearby, adjScore });
               }
-              // Sort within each bucket by score desc
+              // Sort within each bucket: accepted pinned to top, then by adjusted score desc
               for (const b of Object.keys(byBucket)) {
-                byBucket[b].sort((a, b) => b.score - a.score);
+                byBucket[b].sort((a, b) => {
+                  if (a.s.status === 'accepted' && b.s.status !== 'accepted') return -1;
+                  if (b.s.status === 'accepted' && a.s.status !== 'accepted') return 1;
+                  return b.adjScore - a.adjScore;
+                });
               }
 
               return (
-                <div key={dateKey} className={`mt-3 ${isPast ? 'opacity-60' : ''}`}>
+                <div key={dateKey} className={`mt-3 lg:mt-0 lg:mb-4 ${isPast ? 'opacity-60' : ''}`}>
                   {/* Day header */}
                   <div className={`flex items-baseline gap-2 mb-1.5 pl-1 border-l-2 ${
                     isToday ? 'border-blue-500' : 'border-gray-300'
@@ -923,7 +1074,8 @@ export function PlanningScreen() {
                   {/* Time-of-day sections */}
                   {TIME_BUCKETS.map(bucket => {
                     const picks = byBucket[bucket.key] || [];
-                    if (picks.length === 0) return null;
+                    const bonusPicks = bonusPicksByBucket[bucket.key] || [];
+                    if (picks.length === 0 && bonusPicks.length === 0) return null;
                     return (
                       <div key={bucket.key} className="mb-2">
                         <div className="flex items-center gap-1.5 mb-1 px-1">
@@ -933,12 +1085,24 @@ export function PlanningScreen() {
                           </span>
                           <div className="flex-1 h-px bg-gray-200 ml-1" />
                         </div>
-                        {picks.map(s => (
+                        {picks.map(({ s, nearby }) => (
                           <SuggestionCard
                             key={s.id}
                             suggestion={s}
                             onAction={handleAction}
                             calendarAdding={calendarAdding}
+                            nearbyAnchor={nearby ? { name: nearby.anchor.name, km: nearby.km } : null}
+                          />
+                        ))}
+                        {bonusPicks.map(bp => (
+                          <BonusPickCard
+                            key={`bonus-${bp.place.id}`}
+                            place={bp.place}
+                            anchor={bp.anchor}
+                            km={bp.km}
+                            dateKey={dateKey}
+                            onAdd={handleBonusAdd}
+                            onDismiss={handleBonusDismiss}
                           />
                         ))}
                       </div>
@@ -947,6 +1111,7 @@ export function PlanningScreen() {
                 </div>
               );
             })}
+            </div>
 
             {/* Events section */}
             {activeEvents.length > 0 && (
@@ -977,10 +1142,11 @@ export function PlanningScreen() {
 
 // ── Card Components ───────────────────────────────────────
 
-function SuggestionCard({ suggestion: s, onAction, calendarAdding }: {
+function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor }: {
   suggestion: Suggestion;
   onAction: (id: number, placeId: string, action: 'accepted' | 'dismissed') => void;
   calendarAdding: string | null;
+  nearbyAnchor?: { name: string; km: number } | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const emoji = CATEGORY_EMOJI[s.category] || CATEGORY_EMOJI[s.category?.toLowerCase()] || '📍';
@@ -1036,8 +1202,15 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding }: {
           </div>
 
           {/* Tags row */}
-          {(booking || vibeTags.length > 0 || s.liked) && (
+          {(booking || vibeTags.length > 0 || s.liked || nearbyAnchor) && (
             <div className="flex items-center gap-1 mt-1 flex-wrap">
+              {nearbyAnchor && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                  📍 {nearbyAnchor.km < 0.5
+                    ? `Next to ${nearbyAnchor.name}`
+                    : `${nearbyAnchor.km.toFixed(1)}km from ${nearbyAnchor.name}`}
+                </span>
+              )}
               {booking && (
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${booking.color}`}>
                   {booking.label}
@@ -1109,7 +1282,7 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding }: {
               className="px-2 py-1 bg-gray-50 text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100"
               title="Open in Google Maps"
             >
-              🗺
+              📍
             </a>
           )}
           {s.website && (
@@ -1141,6 +1314,96 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding }: {
       ) : (
         <div className="mt-1.5 text-[11px] text-green-600 font-medium">✓ Added to calendar</div>
       )}
+    </div>
+  );
+}
+
+function BonusPickCard({
+  place,
+  anchor,
+  km,
+  dateKey,
+  onAdd,
+  onDismiss,
+}: {
+  place: PlaceRecord;
+  anchor: Suggestion;
+  km: number;
+  dateKey: string;
+  onAdd: (place: PlaceRecord, anchor: Suggestion, dateKey: string) => void;
+  onDismiss: (place: PlaceRecord, dateKey: string) => void;
+}) {
+  const emoji = CATEGORY_EMOJI[place.category] || CATEGORY_EMOJI[place.category?.toLowerCase()] || '📍';
+  const distanceLabel = km < 0.1 ? 'next door' : km < 0.5 ? `${Math.round(km * 1000)}m away` : `${km.toFixed(1)}km away`;
+
+  return (
+    <div className="mb-1.5 ml-3 px-3 py-2 bg-emerald-50/60 rounded-lg border border-emerald-200 shadow-sm relative">
+      {/* left accent bar */}
+      <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-emerald-400 rounded-full" />
+      <div className="flex items-start gap-2">
+        <span className="text-base leading-none mt-0.5">✨</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-sm">{emoji}</span>
+            <h3 className="text-sm font-semibold text-gray-900 truncate">{place.name}</h3>
+            {place.google_rating && (
+              <span className="text-[11px] text-gray-500 shrink-0">
+                <span className="text-amber-500">★</span> {place.google_rating}
+              </span>
+            )}
+            {place.liked && (
+              <span className="text-[10px] text-pink-500 shrink-0">♡</span>
+            )}
+          </div>
+          <div className="text-[11px] text-emerald-700 font-medium truncate">
+            Near your {anchor.name} — {distanceLabel}
+          </div>
+          <div className="text-[11px] text-gray-600 truncate">
+            {place.subcategory
+              ? place.subcategory.split(',').slice(0, 2).map(x => titleCase(x.trim())).join(' · ')
+              : titleCase(place.category || '')}
+            {place.area && <span> · {titleCase(place.area)}</span>}
+            {place.price_tier && <span> · {place.price_tier}</span>}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 mt-1.5">
+        <button
+          onClick={() => onAdd(place, anchor, dateKey)}
+          className="flex-1 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[11px] font-medium active:bg-emerald-200"
+        >
+          📅 Add to Calendar
+        </button>
+        {place.google_maps_url && (
+          <a
+            href={place.google_maps_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-2 py-1 bg-white text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100 border border-emerald-200"
+            title="Open in Google Maps"
+          >
+            📍
+          </a>
+        )}
+        {place.website && (
+          <a
+            href={place.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-2 py-1 bg-white text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100 border border-emerald-200"
+            title="Website"
+          >
+            🔗
+          </a>
+        )}
+        <button
+          onClick={() => onDismiss(place, dateKey)}
+          className="px-2 py-1 bg-white text-gray-500 rounded-md text-[11px] font-medium active:bg-gray-100 border border-emerald-200"
+          title="Dismiss"
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }
