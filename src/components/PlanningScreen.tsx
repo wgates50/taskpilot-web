@@ -10,7 +10,7 @@ interface Suggestion {
   suggestion_date: string;
   suggested_for: string | null;
   score: number;
-  scoring_reasons: Record<string, number>;
+  scoring_reasons: Record<string, number | string>;
   status: string;
   name: string;
   category: string;
@@ -1164,10 +1164,14 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor 
   // Vibe tags (cap at 3 for line budget)
   const vibeTags = (s.vibe_tags || []).slice(0, 3);
 
-  // Top scoring reasons
-  const reasonEntries = s.scoring_reasons
-    ? Object.entries(s.scoring_reasons).sort(([, a], [, b]) => (b as number) - (a as number))
-    : [];
+  // Top scoring reasons — split numeric (graded, sortable) from label fields (e.g. forecast_confidence)
+  const rawReasons = s.scoring_reasons ? Object.entries(s.scoring_reasons) : [];
+  const numericReasons = rawReasons
+    .filter(([, v]) => typeof v === 'number' && Number.isFinite(v as number))
+    .sort(([, a], [, b]) => (b as number) - (a as number)) as [string, number][];
+  const labelReasons = rawReasons.filter(
+    ([, v]) => typeof v === 'string' || !Number.isFinite(v as number),
+  ) as [string, string][];
 
   return (
     <div className={`mb-1.5 px-3 py-2 bg-white rounded-lg border shadow-sm ${
@@ -1245,17 +1249,29 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor 
           {s.address && (
             <div className="text-[11px] text-gray-600">📍 {s.address}</div>
           )}
-          {reasonEntries.length > 0 && (
+          {(numericReasons.length > 0 || labelReasons.length > 0) && (
             <div className="flex flex-wrap gap-x-2.5 gap-y-0.5">
-              {reasonEntries.map(([k, v]) => (
+              {numericReasons.map(([k, v]) => (
                 <span key={k} className="text-[10px] text-gray-500">
                   {k.replace(/_/g, ' ')}{' '}
                   <span className={`font-semibold ${
-                    (v as number) >= 15 ? 'text-green-600' :
-                    (v as number) < 5 ? 'text-red-400' :
+                    v >= 15 ? 'text-green-600' :
+                    v < 5 ? 'text-red-400' :
                     'text-gray-600'
                   }`}>
-                    {Math.round(v as number)}
+                    {Math.round(v)}
+                  </span>
+                </span>
+              ))}
+              {labelReasons.map(([k, v]) => (
+                <span key={k} className="text-[10px] text-gray-500">
+                  {k.replace(/_/g, ' ')}{' '}
+                  <span className={`font-semibold ${
+                    v === 'high' ? 'text-green-600' :
+                    v === 'low' ? 'text-amber-600' :
+                    'text-gray-600'
+                  }`}>
+                    {v}
                   </span>
                 </span>
               ))}
