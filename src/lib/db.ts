@@ -443,6 +443,16 @@ export async function getPlacesCount(): Promise<number> {
   return Number(result.rows[0].count);
 }
 
+// Delete a place by id. Repoints child rows in suggestions/visit_reviews to null
+// first so the foreign-key constraint doesn't block the delete. Returns whether
+// a row was actually removed.
+export async function deletePlace(id: string): Promise<boolean> {
+  await sql`UPDATE suggestions  SET place_id = NULL WHERE place_id = ${id}`;
+  await sql`UPDATE visit_reviews SET place_id = NULL WHERE place_id = ${id}`;
+  const result = await sql`DELETE FROM places WHERE id = ${id}`;
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function getPlacesStats(): Promise<{
   total: number;
   enriched: number;

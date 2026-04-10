@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPlaces, upsertPlace, getPlacesStats, updatePlaceScoring, updatePlaceEnrichment } from '@/lib/db';
+import { getPlaces, upsertPlace, getPlacesStats, updatePlaceScoring, updatePlaceEnrichment, deletePlace } from '@/lib/db';
 import { verifyApiKey } from '@/lib/auth';
 
 // Normalize Notion page IDs — strip dashes to prevent duplicates
@@ -127,6 +127,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, place }, { status: 201 });
   } catch (err) {
     console.error('POST /api/places error:', err);
+    return NextResponse.json(
+      { error: 'Internal server error', detail: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/places?id=<id> — remove a place row (used for cleanup of
+// bad/test rows). Foreign keys in suggestions/visit_reviews are nulled
+// out inside deletePlace() so the delete never trips an FK constraint.
+export async function DELETE(req: NextRequest) {
+  if (!verifyApiKey(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const rawId = searchParams.get('id');
+    if (!rawId) {
+      return NextResponse.json({ error: 'id query param is required' }, { status: 400 });
+    }
+    // We intentionally do NOT normalize here — callers may need to delete a
+    // malformed row by its exact id.
+    const removed = await deletePlace(rawId);
+    return NextResponse.json({ ok: true, id: rawId, removed });
+  } catch (err) {
+    console.error('DELETE /api/places error:', err);
     return NextResponse.json(
       { error: 'Internal server error', detail: err instanceof Error ? err.message : String(err) },
       { status: 500 }
