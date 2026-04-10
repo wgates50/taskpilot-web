@@ -141,6 +141,26 @@ const BOOKING_LABELS: Record<string, { label: string; color: string }> = {
   'booking-required': { label: 'Booking required', color: 'bg-red-100 text-red-700' },
 };
 
+// Time-of-day buckets — order matters for render
+const TIME_BUCKETS: { key: string; label: string; icon: string; matches: string[] }[] = [
+  { key: 'morning',   label: 'Morning',   icon: '🌅', matches: ['morning', 'breakfast', 'brunch'] },
+  { key: 'afternoon', label: 'Afternoon', icon: '☀️', matches: ['afternoon', 'lunch', 'daytime'] },
+  { key: 'evening',   label: 'Evening',   icon: '🌙', matches: ['evening', 'dinner', 'night', 'late-night'] },
+];
+
+function bucketFor(suggestedFor: string | null): string {
+  if (!suggestedFor) return 'evening';
+  const s = suggestedFor.toLowerCase();
+  for (const b of TIME_BUCKETS) {
+    if (b.matches.some(m => s.includes(m))) return b.key;
+  }
+  return 'evening';
+}
+
+function titleCase(s: string): string {
+  return s.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 const COMPANION_OPTIONS = [
   { mode: 'solo', label: 'Solo', icon: '👤' },
   { mode: 'partner', label: 'Partner', icon: '💑' },
@@ -845,47 +865,85 @@ export function PlanningScreen() {
               });
               const isToday = dateKey === formatDate(new Date());
               const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
+              const dayNumber = date.getDate();
+              const weekdayShort = date.toLocaleDateString('en-GB', { weekday: 'short' });
 
+              // Empty day — single-line tight row
               if (daySuggestions.length === 0 && dayEvents.length === 0) {
                 return (
-                  <div key={dateKey} className="mt-4">
-                    <div className={`flex items-baseline gap-2 mb-2 ${isPast ? 'opacity-50' : ''}`}>
-                      <h2 className={`text-sm font-bold ${isToday ? 'text-blue-600' : 'text-gray-800'}`}>
-                        {getDayLabel(date)}
-                      </h2>
-                      <span className="text-xs text-gray-400">{date.getDate()}</span>
-                    </div>
-                    <p className="text-xs text-gray-400 italic ml-1">No suggestions yet</p>
+                  <div
+                    key={dateKey}
+                    className={`mt-2 flex items-baseline gap-2 px-1 py-1 border-l-2 ${
+                      isPast ? 'opacity-40 border-gray-200' :
+                      isToday ? 'border-blue-400' : 'border-gray-200'
+                    }`}
+                  >
+                    <h2 className={`text-xs font-semibold ${isToday ? 'text-blue-600' : 'text-gray-600'}`}>
+                      {getDayLabel(date)}
+                    </h2>
+                    <span className="text-[10px] text-gray-400">{weekdayShort} {dayNumber}</span>
+                    <span className="text-[10px] text-gray-400 italic ml-auto">— free day —</span>
                   </div>
                 );
               }
 
+              // Group suggestions by time-of-day bucket
+              const byBucket: Record<string, Suggestion[]> = {};
+              for (const s of daySuggestions) {
+                const b = bucketFor(s.suggested_for);
+                (byBucket[b] ||= []).push(s);
+              }
+              // Sort within each bucket by score desc
+              for (const b of Object.keys(byBucket)) {
+                byBucket[b].sort((a, b) => b.score - a.score);
+              }
+
               return (
-                <div key={dateKey} className={`mt-4 ${isPast ? 'opacity-60' : ''}`}>
-                  <div className="flex items-baseline gap-2 mb-2">
-                    <h2 className={`text-sm font-bold ${isToday ? 'text-blue-600' : 'text-gray-800'}`}>
+                <div key={dateKey} className={`mt-3 ${isPast ? 'opacity-60' : ''}`}>
+                  {/* Day header */}
+                  <div className={`flex items-baseline gap-2 mb-1.5 pl-1 border-l-2 ${
+                    isToday ? 'border-blue-500' : 'border-gray-300'
+                  }`}>
+                    <h2 className={`text-base font-bold ${isToday ? 'text-blue-600' : 'text-gray-900'}`}>
                       {getDayLabel(date)}
                     </h2>
-                    <span className="text-xs text-gray-400">{date.getDate()}</span>
+                    <span className="text-xs text-gray-500">{weekdayShort} {dayNumber}</span>
                     {daySuggestions.length > 0 && (
-                      <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
-                        {daySuggestions.length} suggestion{daySuggestions.length !== 1 ? 's' : ''}
+                      <span className="text-[10px] text-gray-400 ml-auto">
+                        {daySuggestions.length} pick{daySuggestions.length !== 1 ? 's' : ''}
                       </span>
                     )}
                   </div>
 
+                  {/* Day-level events (all-day, no time bucket) */}
                   {dayEvents.map(event => (
                     <EventCard key={event.id} event={event} onAction={handleEventAction} />
                   ))}
 
-                  {daySuggestions.map(s => (
-                    <SuggestionCard
-                      key={s.id}
-                      suggestion={s}
-                      onAction={handleAction}
-                      calendarAdding={calendarAdding}
-                    />
-                  ))}
+                  {/* Time-of-day sections */}
+                  {TIME_BUCKETS.map(bucket => {
+                    const picks = byBucket[bucket.key] || [];
+                    if (picks.length === 0) return null;
+                    return (
+                      <div key={bucket.key} className="mb-2">
+                        <div className="flex items-center gap-1.5 mb-1 px-1">
+                          <span className="text-xs">{bucket.icon}</span>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                            {bucket.label}
+                          </span>
+                          <div className="flex-1 h-px bg-gray-200 ml-1" />
+                        </div>
+                        {picks.map(s => (
+                          <SuggestionCard
+                            key={s.id}
+                            suggestion={s}
+                            onAction={handleAction}
+                            calendarAdding={calendarAdding}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -924,139 +982,164 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding }: {
   onAction: (id: number, placeId: string, action: 'accepted' | 'dismissed') => void;
   calendarAdding: string | null;
 }) {
-  const [showReasons, setShowReasons] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const emoji = CATEGORY_EMOJI[s.category] || CATEGORY_EMOJI[s.category?.toLowerCase()] || '📍';
   const booking = s.booking_type ? BOOKING_LABELS[s.booking_type] : null;
   const isAccepted = s.status === 'accepted';
-  const isLocal = s.id < 0; // locally scored, not from server
+  const isLocal = s.id < 0;
 
-  // Top scoring reasons sorted by weight
+  // Meta line: subcategory → cuisine → duration
+  const subLabel = s.subcategory
+    ? s.subcategory.split(',').map(x => titleCase(x.trim())).filter(Boolean).slice(0, 2).join(' · ')
+    : titleCase(s.category || '');
+  const cuisineLabel = (s.cuisine_tags || []).slice(0, 2).map(titleCase).join(' · ');
+  const durationLabel = s.duration ? titleCase(s.duration) : null;
+
+  // Vibe tags (cap at 3 for line budget)
+  const vibeTags = (s.vibe_tags || []).slice(0, 3);
+
+  // Top scoring reasons
   const reasonEntries = s.scoring_reasons
     ? Object.entries(s.scoring_reasons).sort(([, a], [, b]) => (b as number) - (a as number))
     : [];
-  const topReasonLabel = reasonEntries.length > 0
-    ? reasonEntries.slice(0, 1).map(([k, v]) => {
-        const score = Math.round(v as number);
-        if (k === 'weather' && score > 70) return '🌤 Great for this weather';
-        if (k === 'time' && score > 70) return '⏰ Good for right now';
-        if (k === 'location' && score > 70) return '📍 Nearby';
-        if (k === 'social' && score > 70) return '👥 Good for your group';
-        if (k === 'novelty' && score > 70) return '✨ Somewhere new';
-        if (k === 'interest' && score > 70) return '⭐ Highly rated';
-        return null;
-      }).filter(Boolean)[0]
-    : null;
 
   return (
-    <div className={`mb-2 p-3 bg-white rounded-xl border shadow-sm ${
+    <div className={`mb-1.5 px-3 py-2 bg-white rounded-lg border shadow-sm ${
       isAccepted ? 'border-green-200 bg-green-50/50' :
       isLocal ? 'border-blue-200 bg-blue-50/30' :
       'border-gray-100'
     }`}>
-      <div className="flex items-start justify-between gap-2">
+      {/* Title row */}
+      <div className="flex items-start gap-2">
+        <span className="text-base leading-none mt-0.5">{emoji}</span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <span className="text-sm">{emoji}</span>
+          <div className="flex items-baseline gap-1.5">
             <h3 className="text-sm font-semibold text-gray-900 truncate">{s.name}</h3>
-            {isLocal && (
-              <span className="text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-600 font-medium shrink-0">Live</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            {s.area && <span>{s.area}</span>}
-            {s.suggested_for && <span>· {s.suggested_for}</span>}
-            {s.price_tier && <span>· {s.price_tier}</span>}
-          </div>
-          {s.notes && (
-            <p className="text-xs text-gray-500 mt-1 line-clamp-2">{s.notes}</p>
-          )}
-          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-            {booking && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${booking.color}`}>
-                {booking.label}
+            {s.google_rating && (
+              <span className="text-[11px] text-gray-500 shrink-0">
+                <span className="text-amber-500">★</span> {s.google_rating}
               </span>
             )}
-            {s.liked && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-100 text-pink-700 font-medium">♡ Liked</span>
+            {isLocal && (
+              <span className="text-[9px] px-1 rounded bg-blue-100 text-blue-600 font-medium shrink-0">LIVE</span>
             )}
-            {topReasonLabel && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">{topReasonLabel}</span>
-            )}
-            {s.score > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowReasons(!showReasons); }}
-                className="text-[10px] text-gray-400 hover:text-gray-600"
-              >
-                Score: {Math.round(s.score)} {showReasons ? '▲' : '▼'}
-              </button>
-            )}
+            <span className="ml-auto text-[10px] text-gray-400 shrink-0">{Math.round(s.score)}</span>
           </div>
-        </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          {s.google_rating && (
-            <div className="text-right">
-              <div className="text-xs font-bold text-gray-700">{s.google_rating}</div>
-              <div className="text-[10px] text-amber-500">★</div>
+
+          {/* Meta line — subcategory/cuisine · area · price · duration */}
+          <div className="text-[11px] text-gray-600 truncate">
+            {subLabel && <span>{subLabel}</span>}
+            {cuisineLabel && <span> · {cuisineLabel}</span>}
+            {s.area && <span> · <span className="text-gray-500">{titleCase(s.area)}</span></span>}
+            {s.price_tier && <span> · <span className="text-gray-500">{s.price_tier}</span></span>}
+            {durationLabel && <span> · {durationLabel}</span>}
+          </div>
+
+          {/* Tags row */}
+          {(booking || vibeTags.length > 0 || s.liked) && (
+            <div className="flex items-center gap-1 mt-1 flex-wrap">
+              {booking && (
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${booking.color}`}>
+                  {booking.label}
+                </span>
+              )}
+              {s.liked && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-100 text-pink-700 font-medium">♡</span>
+              )}
+              {vibeTags.map(t => (
+                <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                  {titleCase(t)}
+                </span>
+              ))}
+              {s.times_visited > 0 && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">
+                  {s.times_visited}× visited
+                </span>
+              )}
             </div>
           )}
+
+          {/* Notes (single line, clickable to expand) */}
+          {s.notes && (
+            <p className="text-[11px] text-gray-500 mt-1 line-clamp-1 italic">{s.notes}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded detail — address + scoring breakdown */}
+      {expanded && (
+        <div className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
+          {s.address && (
+            <div className="text-[11px] text-gray-600">📍 {s.address}</div>
+          )}
+          {reasonEntries.length > 0 && (
+            <div className="flex flex-wrap gap-x-2.5 gap-y-0.5">
+              {reasonEntries.map(([k, v]) => (
+                <span key={k} className="text-[10px] text-gray-500">
+                  {k.replace(/_/g, ' ')}{' '}
+                  <span className={`font-semibold ${
+                    (v as number) >= 15 ? 'text-green-600' :
+                    (v as number) < 5 ? 'text-red-400' :
+                    'text-gray-600'
+                  }`}>
+                    {Math.round(v as number)}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Actions — compact row */}
+      {!isAccepted ? (
+        <div className="flex items-center gap-1 mt-1.5">
+          <button
+            onClick={() => onAction(s.id, s.place_id, 'accepted')}
+            disabled={calendarAdding === s.place_id}
+            className="flex-1 py-1 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium active:bg-blue-100 disabled:opacity-50"
+          >
+            📅 Calendar
+          </button>
           {s.google_maps_url && (
             <a
               href={s.google_maps_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[10px] text-blue-500 underline"
+              className="px-2 py-1 bg-gray-50 text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100"
+              title="Open in Google Maps"
             >
-              Map
+              🗺
             </a>
           )}
-        </div>
-      </div>
-
-      {/* Scoring breakdown (expandable) */}
-      {showReasons && reasonEntries.length > 0 && (
-        <div className="mt-1.5 px-1 flex flex-wrap gap-x-3 gap-y-0.5">
-          {reasonEntries.map(([k, v]) => (
-            <span key={k} className="text-[10px] text-gray-400">
-              {k} <span className={`font-medium ${(v as number) > 70 ? 'text-green-600' : (v as number) < 40 ? 'text-red-400' : 'text-gray-500'}`}>
-                {Math.round(v as number)}
-              </span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Actions */}
-      {!isAccepted && (
-        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
-          <button
-            onClick={() => onAction(s.id, s.place_id, 'accepted')}
-            disabled={calendarAdding === s.place_id}
-            className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100 disabled:opacity-50"
-          >
-            📅 Add to Calendar
-          </button>
           {s.website && (
             <a
               href={s.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium active:bg-gray-100"
+              className="px-2 py-1 bg-gray-50 text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100"
+              title="Website"
             >
               🔗
             </a>
           )}
           <button
+            onClick={() => setExpanded(!expanded)}
+            className="px-2 py-1 bg-gray-50 text-gray-500 rounded-md text-[11px] font-medium active:bg-gray-100"
+            title="More info"
+          >
+            {expanded ? '▲' : 'ⓘ'}
+          </button>
+          <button
             onClick={() => onAction(s.id, s.place_id, 'dismissed')}
-            className="px-3 py-1.5 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium active:bg-gray-100"
+            className="px-2 py-1 bg-gray-50 text-gray-500 rounded-md text-[11px] font-medium active:bg-gray-100"
+            title="Dismiss"
           >
             ✕
           </button>
         </div>
-      )}
-      {isAccepted && (
-        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-green-100">
-          <span className="text-xs text-green-600 font-medium">✓ Added to calendar</span>
-        </div>
+      ) : (
+        <div className="mt-1.5 text-[11px] text-green-600 font-medium">✓ Added to calendar</div>
       )}
     </div>
   );
