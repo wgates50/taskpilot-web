@@ -186,7 +186,13 @@ function getWeekDates(offset: number = 0): { dates: Date[]; label: string } {
 }
 
 function formatDate(d: Date): string {
-  return d.toISOString().split('T')[0];
+  // Use LOCAL calendar date, not UTC. toISOString() returns UTC and will
+  // shift every column by one day in any timezone ahead of UTC (e.g. BST),
+  // causing "Today" queries to hit yesterday's rows in the suggestions table.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function getDayLabel(d: Date): string {
