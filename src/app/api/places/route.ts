@@ -8,6 +8,13 @@ function normalizeId(id: string): string {
   return id.replace(/-/g, '');
 }
 
+// Resolve an incoming payload's primary id. Prefer explicit `id`, then fall back
+// to `notion_page_id` — some tasks only send the Notion UUID under `notion_page_id`.
+function resolveId(place: { id?: string; notion_page_id?: string }): string | null {
+  const raw = place.id || place.notion_page_id;
+  return raw ? normalizeId(raw) : null;
+}
+
 // GET /api/places — list/filter places (used by Planning tab + tasks)
 export async function GET(req: NextRequest) {
   try {
@@ -50,29 +57,80 @@ export async function POST(req: NextRequest) {
 
     // Support batch upsert
     if (Array.isArray(body.places)) {
-      const results = [];
-      for (const place of body.places) {
-        if (!place.id || !place.name) continue;
-        place.id = normalizeId(place.id);
-        if (place.notion_page_id) place.notion_page_id = normalizeId(place.notion_page_id);
-        const result = await upsertPlace(place);
-        results.push(result);
+      const results: unknown[] = [];
+      const skipped: Array<{ index: number; reason: string; name?: string }> = [];
+
+      for (let i = 0; i < body.places.length; i++) {
+        const place = body.places[i];
+        const resolvedId = resolveId(place);
+
+        if (!resolvedId) {
+          skipped.push({ index: i, reason: 'missing id and notion_page_id', name: place.name });
+          continue;
+        }
+        if (!place.name) {
+          skipped.push({ index: i, reason: 'missing name', name: place.name });
+          continue;
+        }
+
+        place.id = resolvedId;
+        if (place.notion_page_id) {
+          place.notion_page_id = normalizeId(place.notion_page_id);
+        } else {
+          place.notion_page_id = resolvedId;
+        }
+
+        try {
+          const result = await upsertPlace(place);
+          results.push(result);
+        } catch (err) {
+          console.error(`upsertPlace failed for place ${i} (${place.name}):`, err);
+          skipped.push({
+            index: i,
+            reason: `upsert error: ${err instanceof Error ? err.message : String(err)}`,
+            name: place.name,
+          });
+        }
       }
-      return NextResponse.json({ ok: true, count: results.length }, { status: 201 });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          count: results.length,
+          received: body.places.length,
+          skipped_count: skipped.length,
+          skipped: skipped.slice(0, 10), // only include first 10 for brevity
+        },
+        { status: 201 }
+      );
     }
 
     // Single upsert
-    if (!body.id || !body.name) {
-      return NextResponse.json({ error: 'id and name are required' }, { status: 400 });
+    const singleId = resolveId(body);
+    if (!singleId) {
+      return NextResponse.json(
+        { error: 'id or notion_page_id is required' },
+        { status: 400 }
+      );
+    }
+    if (!body.name) {
+      return NextResponse.json({ error: 'name is required' }, { status: 400 });
     }
 
-    body.id = normalizeId(body.id);
-    if (body.notion_page_id) body.notion_page_id = normalizeId(body.notion_page_id);
+    body.id = singleId;
+    if (body.notion_page_id) {
+      body.notion_page_id = normalizeId(body.notion_page_id);
+    } else {
+      body.notion_page_id = singleId;
+    }
     const place = await upsertPlace(body);
     return NextResponse.json({ ok: true, place }, { status: 201 });
   } catch (err) {
     console.error('POST /api/places error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal server error', detail: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
   }
 }
 
@@ -80,12 +138,15 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const rawId = body.id;
-    const { id: _rawId, ...updates } = body;
+    const rawId = body.id || body.notion_page_id;
+    const { id: _rawId, notion_page_id: _rawNotionId, ...updates } = body;
     const id = rawId ? normalizeId(rawId) : null;
 
     if (!id) {
-      return NextResponse.json({ error: 'id is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'id or notion_page_id is required' },
+        { status: 400 }
+      );
     }
 
     // Enrichment fields — route to updatePlaceEnrichment
@@ -115,9 +176,18 @@ export async function PATCH(req: NextRequest) {
       await updatePlaceScoring(id, scoringUpdates as Parameters<typeof updatePlaceScoring>[1]);
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      updated: {
+        enrichment: Object.keys(enrichmentUpdates),
+        scoring: Object.keys(scoringUpdates),
+      },
+    });
   } catch (err) {
     console.error('PATCH /api/places error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal server error', detail: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
   }
 }
