@@ -14,6 +14,12 @@ export interface TaskMeta {
   dependents: string[];
   quickReplies: string[];
   retired?: boolean;
+  /**
+   * If true, task still runs on its cron but does NOT appear in the Threads tab.
+   * Used for engines whose output surfaces elsewhere (e.g. daily-activity-engine
+   * writes to the suggestions table → Planning tab, not /api/messages).
+   */
+  hideFromThreads?: boolean;
 }
 
 export const TASKS: TaskMeta[] = [
@@ -55,6 +61,9 @@ export const TASKS: TaskMeta[] = [
     dependencies: ['data-sync-engine'],
     dependents: ['morning-brief', 'weekly-planner'],
     quickReplies: ['Sounds good!', 'Not today', 'Save for weekend', 'Show alternatives'],
+    // Output lives in the Planning tab (suggestions table), not /api/messages —
+    // hide the dead thread that this task would otherwise create.
+    hideFromThreads: true,
   },
   {
     id: 'finance-tracker',

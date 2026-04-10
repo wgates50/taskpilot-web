@@ -58,8 +58,8 @@ export function ThreadsScreen({ latestMessages, unreads, pins, onOpenThread, onT
   const [bgCollapsed, setBgCollapsed] = useState(false);
   const [longPressId, setLongPressId] = useState<string | null>(null);
 
-  const mainTasks = TASKS.filter(t => t.tier === 'main' && !t.retired);
-  const bgTasks = TASKS.filter(t => t.tier === 'background' && !t.retired);
+  const mainTasks = TASKS.filter(t => t.tier === 'main' && !t.retired && !t.hideFromThreads);
+  const bgTasks = TASKS.filter(t => t.tier === 'background' && !t.retired && !t.hideFromThreads);
   const retiredTasks = TASKS.filter(t => t.retired);
 
   // Sort: pinned first, then by latest message time
