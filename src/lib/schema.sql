@@ -150,11 +150,17 @@ CREATE TABLE IF NOT EXISTS events_cache (
   closing_date DATE,
   score NUMERIC(5,2),
   status TEXT NOT NULL DEFAULT 'pending',
+  lat NUMERIC,
+  lng NUMERIC,
   times_suggested INTEGER NOT NULL DEFAULT 0,
   last_suggested TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- For existing deployments, add lat/lng if missing.
+ALTER TABLE events_cache ADD COLUMN IF NOT EXISTS lat NUMERIC;
+ALTER TABLE events_cache ADD COLUMN IF NOT EXISTS lng NUMERIC;
 
 CREATE INDEX IF NOT EXISTS idx_events_date ON events_cache(date_start);
 CREATE INDEX IF NOT EXISTS idx_events_closing ON events_cache(closing_date);

@@ -81,6 +81,21 @@ interface CachedEvent {
   closing_date: string | null;
   score: number | null;
   status: string;
+  lat: number | null;
+  lng: number | null;
+}
+
+// Normalised anchor for proximity-based bonus picks. Can be sourced from
+// either an accepted Suggestion or a gcal-synced CachedEvent with coords.
+interface DayAnchor {
+  id: string;            // the source row id (prefix "gcal-" if event-sourced)
+  place_id: string | null;
+  name: string;
+  category: string | null;
+  lat: number;
+  lng: number;
+  suggested_for: string | null;
+  source: 'suggestion' | 'event';
 }
 
 interface VisitReview {
@@ -583,7 +598,7 @@ export function PlanningScreen() {
   // accepted suggestion into local state so the card disappears and can itself
   // anchor further re-suggestions.
   const handleBonusAdd = useCallback(
-    async (place: PlaceRecord, anchor: Suggestion, dateKey: string) => {
+    async (place: PlaceRecord, anchor: DayAnchor, dateKey: string) => {
       // Try server-side API first (Option A). Fall back to URL if not connected.
       const result = await addToCalendarViaApi({
         summary: place.name,
@@ -1124,27 +1139,85 @@ export function PlanningScreen() {
             {dates.map(date => {
               const dateKey = formatDate(date);
               const daySuggestions = suggestions[dateKey] || [];
+              // Dedup — when the user adds an accepted suggestion to Google
+              // Calendar via Option A, the next calendar-sync run pulls it
+              // back as a gcal-categorised event. We'd then render BOTH rows
+              // for the same plan. Filter out any gcal event whose
+              // (normalised-title, date) matches an accepted suggestion
+              // on the same day.
+              const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+              const acceptedTitlesToday = new Set(
+                daySuggestions
+                  .filter(s => s.status === 'accepted')
+                  .map(s => norm(s.name)),
+              );
               const dayEvents = activeEvents.filter(e => {
                 const eventDate = new Date(e.date_start).toISOString().split('T')[0];
-                return eventDate === dateKey;
+                if (eventDate !== dateKey) return false;
+                // Only dedup gcal-sourced events (ids starting with 'gcal-')
+                // against accepted suggestions — scraped London events can
+                // legitimately share a title with a place suggestion.
+                if (e.id.startsWith('gcal-') && acceptedTitlesToday.has(norm(e.title))) {
+                  return false;
+                }
+                return true;
               });
               const isToday = dateKey === formatDate(new Date());
               const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
               const dayNumber = date.getDate();
               const weekdayShort = date.toLocaleDateString('en-GB', { weekday: 'short' });
 
-              // Anchors for this day — any accepted suggestion with a location.
-              // These act as "you'll already be around here" pins that boost nearby picks.
-              const dayAnchors = daySuggestions.filter(
-                s => s.status === 'accepted' && s.lat != null && s.lng != null
-              );
+              // Anchors for this day — anything with a location that pins the
+              // user to a spot, used for "you'll already be around here" bonus
+              // picks. Two sources:
+              //   (1) accepted suggestions with lat/lng
+              //   (2) gcal-synced events with lat/lng (flea markets, concerts,
+              //       dinners, etc — anything calendar-sync has geocoded)
+              const suggestionAnchors: DayAnchor[] = daySuggestions
+                .filter(s => s.status === 'accepted' && s.lat != null && s.lng != null)
+                .map(s => ({
+                  id: `sug-${s.id}`,
+                  place_id: s.place_id,
+                  name: s.name,
+                  category: s.category,
+                  lat: s.lat as number,
+                  lng: s.lng as number,
+                  suggested_for: s.suggested_for,
+                  source: 'suggestion' as const,
+                }));
+
+              const eventAnchors: DayAnchor[] = dayEvents
+                .filter(e => e.lat != null && e.lng != null && e.status !== 'dismissed')
+                .map(e => {
+                  // Derive a suggested_for bucket from the event's start time.
+                  // All-day events (no time or midnight) map to 'afternoon' so
+                  // the bonus bucket lands somewhere visible. Timed events map
+                  // to their actual bucket.
+                  const d = new Date(e.date_start);
+                  const hour = d.getHours();
+                  const isAllDay = /^\d{4}-\d{2}-\d{2}$/.test(e.date_start) || (hour === 0 && d.getMinutes() === 0);
+                  const bucket = isAllDay ? 'afternoon' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+                  return {
+                    id: e.id,
+                    place_id: null,
+                    name: e.title,
+                    category: e.category,
+                    lat: e.lat as number,
+                    lng: e.lng as number,
+                    // A synthetic suggested_for string used only for bucketFor().
+                    suggested_for: bucket,
+                    source: 'event' as const,
+                  };
+                });
+
+              const dayAnchors: DayAnchor[] = [...suggestionAnchors, ...eventAnchors];
 
               // Compute bonus picks from the full 290-place DB:
               // when an anchor is set, find up to 2 nearby places (<600m) that
               // are (a) not already in today's suggestions, (b) a different
               // category to the anchor, (c) preferably liked. These become
               // "Near your [anchor]" bonus cards.
-              type BonusPick = { place: PlaceRecord; anchor: Suggestion; km: number };
+              type BonusPick = { place: PlaceRecord; anchor: DayAnchor; km: number };
               const usedPlaceIds = new Set(daySuggestions.map(s => s.place_id));
               const bonusPicksByBucket: Record<string, BonusPick[]> = {};
               for (const anchor of dayAnchors) {
@@ -1156,12 +1229,12 @@ export function PlanningScreen() {
                     !usedPlaceIds.has(p.id) &&
                     !dismissedBonusKeys.has(`${dateKey}::${p.id}`) &&
                     p.category !== anchor.category &&
-                    haversineKm(p.lat, p.lng, anchor.lat!, anchor.lng!) < 0.6
+                    haversineKm(p.lat, p.lng, anchor.lat, anchor.lng) < 0.6
                   )
                   .map(p => ({
                     place: p,
                     anchor,
-                    km: haversineKm(p.lat!, p.lng!, anchor.lat!, anchor.lng!),
+                    km: haversineKm(p.lat!, p.lng!, anchor.lat, anchor.lng),
                   }))
                   .sort((a, b) => {
                     // Prefer liked places, then closer ones
@@ -1200,12 +1273,13 @@ export function PlanningScreen() {
               // the anchor + distance so the card can badge it and we can re-sort.
               const findNearbyAnchor = (
                 s: Suggestion
-              ): { anchor: Suggestion; km: number } | null => {
+              ): { anchor: DayAnchor; km: number } | null => {
                 if (!s.lat || !s.lng || dayAnchors.length === 0) return null;
-                let best: { anchor: Suggestion; km: number } | null = null;
+                let best: { anchor: DayAnchor; km: number } | null = null;
                 for (const a of dayAnchors) {
-                  if (a.id === s.id) continue;
-                  const km = haversineKm(s.lat, s.lng, a.lat!, a.lng!);
+                  // Don't nearby-match a suggestion to its own anchor row.
+                  if (a.source === 'suggestion' && a.place_id === s.place_id) continue;
+                  const km = haversineKm(s.lat, s.lng, a.lat, a.lng);
                   if (km > 1.5) continue;
                   if (!best || km < best.km) best = { anchor: a, km };
                 }
@@ -1525,10 +1599,10 @@ function BonusPickCard({
   onDismiss,
 }: {
   place: PlaceRecord;
-  anchor: Suggestion;
+  anchor: DayAnchor;
   km: number;
   dateKey: string;
-  onAdd: (place: PlaceRecord, anchor: Suggestion, dateKey: string) => void;
+  onAdd: (place: PlaceRecord, anchor: DayAnchor, dateKey: string) => void;
   onDismiss: (place: PlaceRecord, dateKey: string) => void;
 }) {
   const emoji = CATEGORY_EMOJI[place.category] || CATEGORY_EMOJI[place.category?.toLowerCase()] || '📍';

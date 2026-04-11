@@ -558,6 +558,8 @@ export interface EventCacheRow {
   closing_date: string | null;
   score: number | null;
   status: string;
+  lat: number | null;
+  lng: number | null;
   times_suggested: number;
   last_suggested: string | null;
   created_at: string;
@@ -569,7 +571,7 @@ export async function upsertEvent(event: Partial<EventCacheRow> & { id: string; 
     INSERT INTO events_cache (
       id, title, venue, date_start, date_end, category, price, url,
       calendar_link, tags, reason, closing_date, score, status,
-      times_suggested, last_suggested
+      lat, lng, times_suggested, last_suggested
     ) VALUES (
       ${event.id}, ${event.title}, ${event.venue || null},
       ${event.date_start || new Date().toISOString()}, ${event.date_end || null},
@@ -577,6 +579,7 @@ export async function upsertEvent(event: Partial<EventCacheRow> & { id: string; 
       ${event.calendar_link || null}, ${JSON.stringify(event.tags || [])},
       ${event.reason || null}, ${event.closing_date || null},
       ${event.score || null}, ${event.status || 'pending'},
+      ${event.lat ?? null}, ${event.lng ?? null},
       ${event.times_suggested || 0}, ${event.last_suggested || null}
     )
     ON CONFLICT (id) DO UPDATE SET
@@ -592,6 +595,8 @@ export async function upsertEvent(event: Partial<EventCacheRow> & { id: string; 
       reason = COALESCE(EXCLUDED.reason, events_cache.reason),
       closing_date = COALESCE(EXCLUDED.closing_date, events_cache.closing_date),
       score = COALESCE(EXCLUDED.score, events_cache.score),
+      lat = COALESCE(EXCLUDED.lat, events_cache.lat),
+      lng = COALESCE(EXCLUDED.lng, events_cache.lng),
       updated_at = NOW()
     RETURNING *
   `;
@@ -844,12 +849,18 @@ export async function setupDatabase(): Promise<void> {
       closing_date DATE,
       score NUMERIC(5,2),
       status TEXT NOT NULL DEFAULT 'pending',
+      lat NUMERIC,
+      lng NUMERIC,
       times_suggested INTEGER NOT NULL DEFAULT 0,
       last_suggested TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  // Migrate existing deployments that already have an events_cache table
+  // without lat/lng columns.
+  await sql`ALTER TABLE events_cache ADD COLUMN IF NOT EXISTS lat NUMERIC`;
+  await sql`ALTER TABLE events_cache ADD COLUMN IF NOT EXISTS lng NUMERIC`;
   await sql`CREATE INDEX IF NOT EXISTS idx_events_date ON events_cache(date_start)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_events_closing ON events_cache(closing_date)`;
 
