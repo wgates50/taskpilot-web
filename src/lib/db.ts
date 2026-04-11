@@ -848,4 +848,51 @@ export async function setupDatabase(): Promise<void> {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_visit_reviews_week ON visit_reviews(review_week)`;
+
+  // --- Interactions (attended / missed signals) ---
+  await sql`
+    CREATE TABLE IF NOT EXISTS interactions (
+      id SERIAL PRIMARY KEY,
+      item_key TEXT NOT NULL,
+      item_title TEXT,
+      type TEXT NOT NULL CHECK (type IN ('attended', 'missed')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_interactions_item_key ON interactions(item_key)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_interactions_type ON interactions(type)`;
+
+  // --- UNESCO World Heritage Sites ---
+  await sql`
+    CREATE TABLE IF NOT EXISTS unesco_sites (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      country TEXT NOT NULL,
+      region TEXT NOT NULL,
+      year_inscribed INTEGER,
+      category TEXT NOT NULL DEFAULT 'cultural',
+      lat DOUBLE PRECISION,
+      lng DOUBLE PRECISION,
+      description TEXT,
+      short_description TEXT,
+      wiki_url TEXT,
+      unesco_url TEXT,
+      image_url TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_country ON unesco_sites(country)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_region ON unesco_sites(region)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_category ON unesco_sites(category)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS unesco_visits (
+      id SERIAL PRIMARY KEY,
+      site_id INTEGER NOT NULL REFERENCES unesco_sites(id) ON DELETE CASCADE,
+      visited_date DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_unesco_visits_site_id ON unesco_visits(site_id)`;
 }

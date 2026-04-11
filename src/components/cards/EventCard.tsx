@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSavedItems } from '@/lib/SavedItemsContext';
 
 interface EventData {
@@ -17,6 +17,38 @@ interface EventData {
   category?: string;
   map_url?: string;
   booking_url?: string;
+  item_key?: string;
+}
+
+// Returns true if the given date string represents a date in the past
+function isDatePast(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const lower = dateStr.toLowerCase();
+  // Skip vague/ongoing dates
+  if (['tba', 'tbd', 'coming soon', 'on sale', 'open now'].some(v => lower.includes(v))) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Parse common formats: "12 Apr 2025", "12 April 2025", "Sat 12 Apr"
+  const parsed = new Date(dateStr);
+  if (!isNaN(parsed.getTime())) {
+    return parsed < today;
+  }
+
+  // Try extracting a date from "12 Apr" style (assume current/next year)
+  const match = dateStr.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i);
+  if (match) {
+    const day = parseInt(match[1]);
+    const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const month = monthNames.indexOf(match[2].toLowerCase());
+    const year = today.getFullYear();
+    const candidate = new Date(year, month, day);
+    if (candidate < today) return true;
+    return false;
+  }
+
+  return false;
 }
 
 // Determine if the date string represents a specific bookable date
@@ -85,6 +117,8 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
   const { isSaved, getSavedId, saveItem, unsaveItem } = useSavedItems();
   const [calAdded, setCalAdded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [interaction, setInteraction] = useState<'attended' | 'missed' | null>(null);
+  const [recordingInteraction, setRecordingInteraction] = useState(false);
 
   const d = data as unknown as EventData;
   const title = d.title || '';
@@ -99,6 +133,7 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
   const imageUrl = d.image_url || null;
   const category = d.category || null;
   const mapUrl = d.map_url || null;
+  const itemKey = d.item_key || `event:${title}:${venue}`.replace(/\s+/g, '-').toLowerCase();
 
   const saved = isSaved(title, venue || undefined);
   const savedId = getSavedId(title, venue || undefined);
@@ -107,6 +142,33 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
   const canAddToCalendar = hasSpecificDate(date) && !inCalendar;
   const closing = isClosingSoon(date);
   const mapsLink = venue ? getMapUrl(venue, mapUrl || undefined) : null;
+  const isPast = (inCalendar || calAdded) && date ? isDatePast(date) : false;
+
+  // Load existing interaction for this event
+  useEffect(() => {
+    if (!isPast) return;
+    fetch(`/api/interactions?item_key=${encodeURIComponent(itemKey)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.interaction) setInteraction(data.interaction.type);
+      })
+      .catch(() => {});
+  }, [isPast, itemKey]);
+
+  const recordInteraction = async (type: 'attended' | 'missed') => {
+    if (recordingInteraction) return;
+    setRecordingInteraction(true);
+    try {
+      await fetch('/api/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_key: itemKey, item_title: title, type }),
+      });
+      setInteraction(type);
+    } finally {
+      setRecordingInteraction(false);
+    }
+  };
 
   const handleSaveToggle = async () => {
     if (saving) return;
@@ -289,6 +351,61 @@ export function EventCard({ data }: { data: Record<string, unknown> }) {
             </a>
           )}
         </div>
+
+        {/* Retrospective: Went / Didn't go — shown when event is in the past */}
+        {isPast && (
+          <div className="mt-2.5 pt-2.5 border-t border-gray-100">
+            {interaction === null ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-gray-400 mr-0.5">How did it go?</span>
+                <button
+                  onClick={() => recordInteraction('attended')}
+                  disabled={recordingInteraction}
+                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                  Went
+                </button>
+                <button
+                  onClick={() => recordInteraction('missed')}
+                  disabled={recordingInteraction}
+                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Didn&apos;t go
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                {interaction === 'attended' ? (
+                  <span className="text-[11px] font-medium text-green-700 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                    You went
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-medium text-gray-400 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Didn&apos;t go
+                  </span>
+                )}
+                <button
+                  onClick={() => setInteraction(null)}
+                  className="text-[10px] text-gray-300 hover:text-gray-500 ml-1"
+                >
+                  change
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
