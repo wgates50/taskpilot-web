@@ -270,6 +270,102 @@ function buildCalendarUrl(name: string, area: string | null, address: string | n
   return `https://calendar.google.com/calendar/event?${params.toString()}`;
 }
 
+// ── Server-side Google Calendar insert (Option A, direct API path) ──
+// Tries to POST the event to /api/calendar/create (which uses the user's
+// stored OAuth tokens). Returns:
+//   'created'        → event was inserted; htmlLink in result
+//   'not_connected'  → user needs to connect Google Calendar in Profile
+//   'error'          → some other failure; caller should fall back to URL
+// Caller is responsible for opening the URL fallback on the non-created paths.
+type CalendarCreateResult =
+  | { status: 'created'; id: string; htmlLink: string }
+  | { status: 'not_connected' }
+  | { status: 'error'; detail: string };
+
+async function addToCalendarViaApi(args: {
+  summary: string;
+  location?: string;
+  description?: string;
+  dateKey: string;              // YYYY-MM-DD
+  duration: string | null;      // null | 'half-day' | 'full-day' | etc
+  allDay?: boolean;
+  startHour?: number;           // 0-23 local Europe/London
+}): Promise<CalendarCreateResult> {
+  const {
+    summary,
+    location = '',
+    description = 'Added from TaskPilot Planning',
+    dateKey,
+    duration,
+    allDay = false,
+    startHour = 18,
+  } = args;
+
+  let startPayload: { dateTime?: string; date?: string; timeZone?: string };
+  let endPayload: { dateTime?: string; date?: string; timeZone?: string };
+
+  if (allDay) {
+    const next = new Date(dateKey);
+    next.setDate(next.getDate() + 1);
+    startPayload = { date: dateKey };
+    endPayload = { date: next.toISOString().slice(0, 10) };
+  } else {
+    const durationHrs = duration === 'half-day' ? 4 : duration === 'full-day' ? 8 : 2;
+    const startStr = `${dateKey}T${String(startHour).padStart(2, '0')}:00:00`;
+    const startDate = new Date(startStr);
+    const endDate = new Date(startDate.getTime() + durationHrs * 3600000);
+    const iso = (d: Date) => {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+    };
+    startPayload = { dateTime: iso(startDate), timeZone: 'Europe/London' };
+    endPayload = { dateTime: iso(endDate), timeZone: 'Europe/London' };
+  }
+
+  try {
+    const res = await fetch('/api/calendar/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        summary,
+        location,
+        description,
+        start: startPayload,
+        end: endPayload,
+      }),
+    });
+    if (res.status === 412) return { status: 'not_connected' };
+    if (!res.ok) {
+      const text = await res.text();
+      return { status: 'error', detail: text };
+    }
+    const data = await res.json();
+    return { status: 'created', id: data.event?.id, htmlLink: data.event?.htmlLink };
+  } catch (err) {
+    return { status: 'error', detail: err instanceof Error ? err.message : 'unknown' };
+  }
+}
+
+// One-time session flag so we only nag the user once per page load about
+// connecting Google Calendar. If they click through Add-to-Calendar multiple
+// times before connecting, the first time is a helpful notice and subsequent
+// times just open the URL silently.
+let _notConnectedWarned = false;
+function warnOnceNotConnected() {
+  if (_notConnectedWarned) return;
+  _notConnectedWarned = true;
+  if (typeof window !== 'undefined') {
+    // Small non-blocking notice. alert() is fine for a solo app.
+    window.setTimeout(
+      () =>
+        window.alert(
+          'Google Calendar is not connected. Opening a new tab for now — connect in Profile → Connect Google Calendar for one-click add.',
+        ),
+      100,
+    );
+  }
+}
+
 // ── Weather fetch (Open-Meteo, free, no key) ─────────────
 
 async function fetchWeather(lat: number, lng: number): Promise<WeatherData> {
@@ -487,15 +583,26 @@ export function PlanningScreen() {
   // accepted suggestion into local state so the card disappears and can itself
   // anchor further re-suggestions.
   const handleBonusAdd = useCallback(
-    (place: PlaceRecord, anchor: Suggestion, dateKey: string) => {
-      const calUrl = buildCalendarUrl(
-        place.name,
-        place.area,
-        place.address,
+    async (place: PlaceRecord, anchor: Suggestion, dateKey: string) => {
+      // Try server-side API first (Option A). Fall back to URL if not connected.
+      const result = await addToCalendarViaApi({
+        summary: place.name,
+        location: place.address || place.area || '',
+        description: `Added from TaskPilot Planning (bonus pick — near ${anchor.name})`,
         dateKey,
-        place.duration
-      );
-      window.open(calUrl, '_blank');
+        duration: place.duration,
+      });
+      if (result.status === 'not_connected') {
+        warnOnceNotConnected();
+        const calUrl = buildCalendarUrl(place.name, place.area, place.address, dateKey, place.duration);
+        window.open(calUrl, '_blank');
+      } else if (result.status === 'error') {
+        console.error('Bonus pick calendar insert failed:', result.detail);
+        const calUrl = buildCalendarUrl(place.name, place.area, place.address, dateKey, place.duration);
+        window.open(calUrl, '_blank');
+      }
+      // On 'created' we say nothing — the card flips to accepted-state via
+      // setSuggestions below and the user sees the green "✓ Added to calendar".
       const syntheticId = -Math.floor(Math.random() * 1_000_000) - 1000;
       const synthetic: Suggestion = {
         id: syntheticId,
@@ -732,8 +839,21 @@ export function PlanningScreen() {
         const s = suggestions[key].find(s => s.id === suggestionId);
         if (s) {
           setCalendarAdding(s.place_id);
-          const calUrl = buildCalendarUrl(s.name, s.area, s.address, key, s.duration);
-          window.open(calUrl, '_blank');
+          // Option A — API-direct insert. Falls back to URL if not connected / error.
+          const result = await addToCalendarViaApi({
+            summary: s.name,
+            location: s.address || s.area || '',
+            description: `Added from TaskPilot Planning (suggestion score ${s.score})`,
+            dateKey: key,
+            duration: s.duration,
+          });
+          if (result.status === 'not_connected') {
+            warnOnceNotConnected();
+            window.open(buildCalendarUrl(s.name, s.area, s.address, key, s.duration), '_blank');
+          } else if (result.status === 'error') {
+            console.error('Suggestion calendar insert failed:', result.detail);
+            window.open(buildCalendarUrl(s.name, s.area, s.address, key, s.duration), '_blank');
+          }
           setCalendarAdding(null);
           break;
         }
@@ -766,20 +886,82 @@ export function PlanningScreen() {
 
   const handleEventAction = async (eventId: string, action: 'accepted' | 'dismissed') => {
     if (action === 'accepted') {
-      // Find the event and open calendar URL
+      // Find the event and insert into Google Calendar via API (with URL fallback).
       const event = events.find(e => e.id === eventId);
       if (event) {
-        const startDate = new Date(event.date_start);
-        const endDate = event.date_end ? new Date(event.date_end) : new Date(startDate.getTime() + 2 * 3600000);
-        const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-        const params = new URLSearchParams({
-          action: 'TEMPLATE',
-          text: event.title,
-          dates: `${fmt(startDate)}/${fmt(endDate)}`,
-          location: event.venue || '',
-          details: event.url ? `More info: ${event.url}` : 'Added from TaskPilot',
-        });
-        window.open(`https://calendar.google.com/calendar/event?${params.toString()}`, '_blank');
+        // Skip re-adding events that were sourced from gcal itself — they're
+        // already on the calendar. Stable IDs from calendar-sync are prefixed
+        // with "gcal-".
+        const alreadyOnCalendar = event.id.startsWith('gcal-');
+
+        // Build URL fallback once (used on not_connected / error paths).
+        const buildEventUrl = () => {
+          const startDate = new Date(event.date_start);
+          const endDate = event.date_end ? new Date(event.date_end) : new Date(startDate.getTime() + 2 * 3600000);
+          const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+          const params = new URLSearchParams({
+            action: 'TEMPLATE',
+            text: event.title,
+            dates: `${fmt(startDate)}/${fmt(endDate)}`,
+            location: event.venue || '',
+            details: event.url ? `More info: ${event.url}` : 'Added from TaskPilot',
+          });
+          return `https://calendar.google.com/calendar/event?${params.toString()}`;
+        };
+
+        if (!alreadyOnCalendar) {
+          setCalendarAdding(event.id);
+          try {
+            // Detect all-day vs timed based on date_start format.
+            // "YYYY-MM-DD" → all-day; anything with T/time → timed.
+            const ds = event.date_start;
+            const isAllDay = /^\d{4}-\d{2}-\d{2}$/.test(ds) || ds.endsWith('T00:00:00') || ds.endsWith('T00:00:00.000Z');
+            const dateKey = ds.slice(0, 10);
+
+            let result: CalendarCreateResult;
+            if (isAllDay) {
+              result = await addToCalendarViaApi({
+                summary: event.title,
+                location: event.venue || '',
+                description: event.url ? `More info: ${event.url}` : 'Added from TaskPilot',
+                dateKey,
+                duration: null,
+                allDay: true,
+              });
+            } else {
+              // Timed event — extract start hour from the ISO string.
+              const startDate = new Date(ds);
+              const startHour = startDate.getHours();
+              // Derive duration in hours from date_end if present, else default 2h.
+              let durationHrs = 2;
+              if (event.date_end) {
+                const endDate = new Date(event.date_end);
+                const diffMs = endDate.getTime() - startDate.getTime();
+                if (diffMs > 0) durationHrs = Math.max(1, Math.round(diffMs / 3600000));
+              }
+              const durationLabel =
+                durationHrs >= 8 ? 'full-day' : durationHrs >= 4 ? 'half-day' : null;
+              result = await addToCalendarViaApi({
+                summary: event.title,
+                location: event.venue || '',
+                description: event.url ? `More info: ${event.url}` : 'Added from TaskPilot',
+                dateKey,
+                duration: durationLabel,
+                startHour,
+              });
+            }
+
+            if (result.status === 'not_connected') {
+              warnOnceNotConnected();
+              window.open(buildEventUrl(), '_blank');
+            } else if (result.status === 'error') {
+              console.error('Event calendar insert failed:', result.detail);
+              window.open(buildEventUrl(), '_blank');
+            }
+          } finally {
+            setCalendarAdding(null);
+          }
+        }
       }
     }
 

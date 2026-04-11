@@ -48,11 +48,22 @@ interface Place {
   last_suggested: string | null;
 }
 
+interface GoogleStatus {
+  connected: boolean;
+  scope?: string;
+  expiresAt?: number;
+  error?: string;
+}
+
 export function ProfileScreen() {
   const [tab, setTab] = useState<ProfileTab>('interests');
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [evidence, setEvidence] = useState<EvidenceEntry[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Google Calendar connection state
+  const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
+  const [googleBanner, setGoogleBanner] = useState<string | null>(null);
 
   // Places tab state
   const [places, setPlaces] = useState<Place[]>([]);
@@ -66,9 +77,10 @@ export function ProfileScreen() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [profileRes, evidenceRes] = await Promise.all([
+        const [profileRes, evidenceRes, googleRes] = await Promise.all([
           fetch('/api/profile'),
           fetch('/api/profile/evidence?limit=30'),
+          fetch('/api/auth/google/status'),
         ]);
         if (profileRes.ok) {
           const data = await profileRes.json();
@@ -78,6 +90,10 @@ export function ProfileScreen() {
           const data = await evidenceRes.json();
           setEvidence(data.log || []);
         }
+        if (googleRes.ok) {
+          const data = await googleRes.json();
+          setGoogleStatus(data);
+        }
       } catch (e) {
         console.error('Failed to fetch profile:', e);
       } finally {
@@ -85,6 +101,27 @@ export function ProfileScreen() {
       }
     };
     fetchData();
+
+    // Check OAuth redirect result (?google=connected | google=error:... etc.)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const g = params.get('google');
+      if (g) {
+        if (g === 'connected') {
+          setGoogleBanner('✓ Google Calendar connected');
+        } else if (g === 'missing_code') {
+          setGoogleBanner('Google Calendar connection failed: missing code');
+        } else {
+          setGoogleBanner(`Google Calendar error: ${g}`);
+        }
+        // Clean the URL so the banner doesn't re-appear on refresh.
+        const url = new URL(window.location.href);
+        url.searchParams.delete('google');
+        window.history.replaceState({}, '', url.toString());
+        // Auto-dismiss after 6s.
+        window.setTimeout(() => setGoogleBanner(null), 6000);
+      }
+    }
   }, []);
 
   // Lazy-load places when the tab is first opened
@@ -137,6 +174,33 @@ export function ProfileScreen() {
         <p className="text-[12px] text-gray-400 mt-0.5">
           Your taste profile — shared across all tasks
         </p>
+
+        {/* Google Calendar connection */}
+        <div className="mt-3 flex items-center justify-between gap-2 p-2.5 bg-gray-50 rounded-md">
+          <div className="min-w-0">
+            <p className="text-[12px] font-medium text-gray-800">Google Calendar</p>
+            <p className="text-[10px] text-gray-400 truncate">
+              {googleStatus?.connected
+                ? 'Connected — Add-to-Calendar inserts events directly.'
+                : 'Not connected — Add-to-Calendar opens a new tab. Connect for one-click add.'}
+            </p>
+          </div>
+          {googleStatus?.connected ? (
+            <span className="text-[11px] text-green-600 font-medium whitespace-nowrap">✓ Connected</span>
+          ) : (
+            <a
+              href="/api/auth/google/consent"
+              className="text-[11px] font-medium text-white bg-blue-600 px-3 py-1.5 rounded-full hover:bg-blue-700 whitespace-nowrap"
+            >
+              Connect
+            </a>
+          )}
+        </div>
+        {googleBanner && (
+          <div className="mt-2 px-2.5 py-1.5 bg-blue-50 border border-blue-100 rounded-md text-[11px] text-blue-700">
+            {googleBanner}
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex mt-3 bg-gray-100 rounded-lg p-0.5">
