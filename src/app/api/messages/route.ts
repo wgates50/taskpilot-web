@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { insertMessage, getMessages, markTaskRead } from '@/lib/db';
-import { verifyApiKey } from '@/lib/auth';
+import { verifyApiKey, verifyClient } from '@/lib/auth';
 import { sendPushNotification } from '@/lib/push';
 import { TASK_MAP } from '@/lib/tasks';
 import { v4 as uuidv4 } from 'uuid';
 
 // POST /api/messages — tasks post new messages here
 export async function POST(req: NextRequest) {
-  // Clone the request body so we can peek at isFromUser before auth check
   const body = await req.json();
+  const isFromUser = Boolean(body.isFromUser);
 
-  // User replies from the webapp don't need API key auth (personal tool)
-  // Task ingestion requires API key
-  if (!body.isFromUser && !verifyApiKey(req)) {
+  // Task ingestion (isFromUser=false) requires the API key.
+  // User replies (isFromUser=true) must come from the same-origin webapp.
+  // Either path must pass auth — clients cannot opt out by setting isFromUser.
+  const authed = isFromUser ? verifyClient(req) : verifyApiKey(req);
+  if (!authed) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const { taskId, blocks, timestamp, isFromUser } = body;
+    const { taskId, blocks, timestamp } = body;
 
     if (!taskId || !blocks) {
       return NextResponse.json({ error: 'taskId and blocks are required' }, { status: 400 });
@@ -63,10 +65,14 @@ export async function GET(req: NextRequest) {
 
     const messages = await getMessages(taskId, limit, before);
 
-    // Mark as read when fetched
-    await markTaskRead(taskId);
+    // Only mark as read on the initial (non-paginated) fetch — older pages
+    // shouldn't trigger a wasted UPDATE every scroll.
+    if (!before) {
+      await markTaskRead(taskId);
+    }
 
-    return NextResponse.json({ messages: messages.reverse() }); // chronological order
+    // Return in chronological order without mutating the source array.
+    return NextResponse.json({ messages: [...messages].reverse() });
   } catch (err) {
     console.error('GET /api/messages error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

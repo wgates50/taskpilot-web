@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import { SavedItemsProvider } from "@/lib/SavedItemsContext";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -34,12 +36,13 @@ export default function RootLayout({
           Responsive container:
           - Mobile (<640px): full-width phone look (no artificial 430px cap).
           - sm (≥640px):     430px centred card — the old phone-framed look.
-          - lg (≥1024px):    1200px wide — tablet/desktop gets real screen real-estate.
+          - lg (≥1024px):    full-width fluid — desktop gets real screen real-estate.
           - xl (≥1280px):    max-w-7xl so ultra-wide screens don't stretch forever.
         */}
-        <div className="mx-auto w-full sm:max-w-[430px] lg:max-w-6xl xl:max-w-7xl h-full bg-white sm:shadow-xl relative overflow-hidden">
-          {children}
+        <div className="mx-auto w-full sm:max-w-[430px] lg:max-w-none lg:px-0 xl:max-w-7xl h-full bg-white sm:shadow-xl lg:shadow-none relative overflow-hidden">
+          <SavedItemsProvider>{children}</SavedItemsProvider>
         </div>
+        <SpeedInsights />
       </body>
     </html>
   );

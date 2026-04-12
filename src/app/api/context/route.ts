@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllUserContext, getUserContext, setUserContext } from '@/lib/db';
+import { getAllUserContext, setUserContext } from '@/lib/db';
+import { verifyClient } from '@/lib/auth';
 
 // GET /api/context — read all user context (location, companions, etc.)
 export async function GET() {
@@ -14,6 +15,9 @@ export async function GET() {
 
 // PUT /api/context — set a context key (used by app for location/companions)
 export async function PUT(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const body = await req.json();
     const { key, value } = body;

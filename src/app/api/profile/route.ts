@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProfile, upsertProfile } from '@/lib/db';
-import { verifyApiKey } from '@/lib/auth';
+import { verifyClient } from '@/lib/auth';
 
 // GET /api/profile — read the taste profile (used by tasks + webapp)
 export async function GET() {
@@ -13,11 +13,13 @@ export async function GET() {
   }
 }
 
-// PUT /api/profile — update the entire profile (API key required)
+// PUT /api/profile — update the entire profile
 export async function PUT(req: NextRequest) {
-  // Allow both API key (tasks) and unauthenticated (webapp — personal tool)
-  const body = await req.json();
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
+    const body = await req.json();
     await upsertProfile(body.profile || body);
     return NextResponse.json({ ok: true });
   } catch (err) {
@@ -28,6 +30,9 @@ export async function PUT(req: NextRequest) {
 
 // PATCH /api/profile — partial update (merge into existing)
 export async function PATCH(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const updates = await req.json();
     const existing = await getProfile() || {};

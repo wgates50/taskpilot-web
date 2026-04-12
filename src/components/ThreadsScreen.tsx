@@ -14,6 +14,7 @@ interface Props {
 
 const GROUP_COLORS: Record<string, string> = {
   calendar: '#3B82F6',
+  activity: '#EC4899',
   reading: '#8B5CF6',
   finance: '#10B981',
   career: '#F59E0B',

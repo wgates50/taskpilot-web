@@ -1,22 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSuggestions, getSuggestionPatternStats, insertSuggestion, updateSuggestionStatus, getPlaces, updatePlaceScoring, getPlace, insertVisitReview } from '@/lib/db';
-import { verifyApiKey } from '@/lib/auth';
+import { getSuggestions, insertSuggestion, updateSuggestionStatus, incrementPlaceCounter } from '@/lib/db';
+import { verifyClient } from '@/lib/auth';
 
 // GET /api/suggestions?date=2026-04-08&status=pending
-// GET /api/suggestions?from=2026-03-01&to=2026-04-12&stats=true — pattern stats for learning loop
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const from = searchParams.get('from');
-    const to = searchParams.get('to');
-    const stats = searchParams.get('stats');
-
-    // Range stats query — used by activity engine learning loop
-    if (from && to && stats === 'true') {
-      const patterns = await getSuggestionPatternStats(from, to);
-      return NextResponse.json({ patterns, from, to });
-    }
-
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
     const status = searchParams.get('status') || undefined;
 
@@ -28,31 +17,29 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/suggestions — task pushes scored suggestions
+// POST /api/suggestions — task pushes scored suggestions, or browser persists rescore
 export async function POST(req: NextRequest) {
-  if (!verifyApiKey(req)) {
+  if (!verifyClient(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const body = await req.json();
 
-    // Batch insert
+    // Batch insert — atomic counter increments avoid an N+1 read.
     if (Array.isArray(body.suggestions)) {
-      const results = [];
-      for (const s of body.suggestions) {
-        if (!s.place_id || !s.suggestion_date || s.score === undefined) continue;
-        const result = await insertSuggestion(s);
-        // Update place times_suggested
-        const place = await getPlace(s.place_id);
-        if (place) {
-          await updatePlaceScoring(s.place_id, {
-            times_suggested: place.times_suggested + 1,
-            last_suggested: new Date().toISOString(),
-          });
-        }
-        results.push(result);
-      }
+      const now = new Date().toISOString();
+      const valid = body.suggestions.filter(
+        (s: { place_id?: string; suggestion_date?: string; score?: number }) =>
+          s.place_id && s.suggestion_date && s.score !== undefined,
+      );
+      const results = await Promise.all(
+        valid.map(async (s: Parameters<typeof insertSuggestion>[0] & { place_id: string }) => {
+          const result = await insertSuggestion(s);
+          await incrementPlaceCounter(s.place_id, 'times_suggested', { last_suggested: now });
+          return result;
+        }),
+      );
       return NextResponse.json({ ok: true, count: results.length }, { status: 201 });
     }
 
@@ -71,6 +58,9 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/suggestions — update status (accept, dismiss, reschedule)
 export async function PATCH(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const body = await req.json();
     const { id, status, place_id } = body;
@@ -81,34 +71,12 @@ export async function PATCH(req: NextRequest) {
 
     await updateSuggestionStatus(id, status);
 
-    // Update place scoring based on action
+    // Update place scoring based on action — atomic increment, no read-then-write race.
     if (place_id) {
-      const place = await getPlace(place_id);
-      if (place) {
-        if (status === 'accepted') {
-          await updatePlaceScoring(place_id, { times_accepted: place.times_accepted + 1 });
-
-          // Auto-create a visit_review record for the suggestion date so
-          // the "Went / Didn't go" prompt appears on the Planning tab.
-          // The review_week is the Monday of the suggestion's week.
-          try {
-            const suggDate = body.suggestion_date || new Date().toISOString().split('T')[0];
-            const d = new Date(suggDate);
-            const dayOfWeek = d.getDay();
-            const monday = new Date(d);
-            monday.setDate(d.getDate() - ((dayOfWeek + 6) % 7)); // shift to Monday
-            const reviewWeek = monday.toISOString().split('T')[0];
-            await insertVisitReview({
-              place_id,
-              review_week: reviewWeek,
-            });
-          } catch (reviewErr) {
-            // Non-fatal — log but don't fail the accept action.
-            console.error('Auto-create visit_review failed:', reviewErr);
-          }
-        } else if (status === 'dismissed') {
-          await updatePlaceScoring(place_id, { times_dismissed: place.times_dismissed + 1 });
-        }
+      if (status === 'accepted') {
+        await incrementPlaceCounter(place_id, 'times_accepted');
+      } else if (status === 'dismissed') {
+        await incrementPlaceCounter(place_id, 'times_dismissed');
       }
     }
 

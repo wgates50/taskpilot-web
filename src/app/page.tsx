@@ -61,37 +61,84 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [fetchLatest, fetchPins]);
 
-  // Register service worker + push
+  // Register service worker on mount; defer the notification permission prompt
+  // until the user has had a chance to interact (Safari/Chrome both reject
+  // permission prompts that fire before any user gesture and can blacklist us
+  // from asking again).
+  const [swReg, setSwReg] = useState<ServiceWorkerRegistration | null>(null);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>('default');
+
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').then(async (reg) => {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-          if (vapidKey) {
-            const sub = await reg.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
-            });
-            await fetch('/api/push', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ subscription: sub.toJSON() }),
-            });
-          }
-        }
-      });
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js').then(setSwReg).catch(e => {
+      console.error('SW registration failed:', e);
+    });
+    if (typeof Notification !== 'undefined') {
+      setPushPermission(Notification.permission);
+    } else {
+      setPushPermission('unsupported');
     }
   }, []);
 
-  // Deep link from push notification
+  const enablePush = useCallback(async () => {
+    if (!swReg) return;
+    const permission = await Notification.requestPermission();
+    setPushPermission(permission);
+    if (permission !== 'granted') return;
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidKey) return;
+    try {
+      const sub = await swReg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
+      });
+      await fetch('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      });
+    } catch (e) {
+      console.error('Push subscribe failed:', e);
+    }
+  }, [swReg]);
+
+  // If the user has previously granted permission, re-subscribe silently on
+  // load — this is a re-subscribe, not a fresh prompt, so it's safe.
+  useEffect(() => {
+    if (!swReg) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidKey) return;
+    swReg.pushManager.getSubscription().then(async existing => {
+      if (existing) return;
+      try {
+        const sub = await swReg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
+        });
+        await fetch('/api/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription: sub.toJSON() }),
+        });
+      } catch (e) {
+        console.error('Push re-subscribe failed:', e);
+      }
+    });
+  }, [swReg]);
+
+  // Deep link from push notification — strip the param after consuming it so
+  // back/forward navigation doesn't keep re-opening the same thread.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const threadId = params.get('thread');
-    if (threadId) {
-      const task = TASKS.find(t => t.id === threadId);
-      if (task) setSelectedTask(task);
-    }
+    if (!threadId) return;
+    const task = TASKS.find(t => t.id === threadId);
+    if (task) setSelectedTask(task);
+    params.delete('thread');
+    const newSearch = params.toString();
+    const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
+    window.history.replaceState({}, '', newUrl);
   }, []);
 
   const togglePin = async (taskId: string) => {
@@ -133,6 +180,14 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-full">
+      {tab === 'threads' && pushPermission === 'default' && swReg && (
+        <button
+          onClick={enablePush}
+          className="shrink-0 mx-4 mt-3 px-3 py-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg text-left active:bg-blue-100"
+        >
+          🔔 Enable notifications to get task updates
+        </button>
+      )}
       <div className="flex-1 overflow-y-auto">
         {tab === 'threads' && (
           <ThreadsScreen

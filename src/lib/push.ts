@@ -35,8 +35,6 @@ export async function sendPushNotification(taskId: string, blocks: unknown[]): P
     title: `${task.icon} ${task.name}`,
     body: getMessagePreview(blocks),
     data: { taskId, url: `/?thread=${taskId}` },
-    icon: '/icon-192.png',
-    badge: '/badge-72.png',
   });
 
   for (const sub of subscriptions) {

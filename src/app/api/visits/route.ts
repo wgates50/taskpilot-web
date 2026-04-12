@@ -1,28 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getVisitReviews, getVisitReviewsHistory, getVisitPatternStats, insertVisitReview, updateVisitReviewStatus, updatePlaceScoring, getPlace } from '@/lib/db';
+import { getVisitReviews, insertVisitReview, updateVisitReviewStatus, incrementPlaceCounter } from '@/lib/db';
+import { verifyApiKey, verifyClient } from '@/lib/auth';
 
 // GET /api/visits?week=2026-04-07&status=pending
-// GET /api/visits?from=2026-03-01&to=2026-04-12 — history across weeks
-// GET /api/visits?from=2026-03-01&to=2026-04-12&stats=true — aggregated pattern stats
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const from = searchParams.get('from');
-    const to = searchParams.get('to');
-    const stats = searchParams.get('stats');
-
-    // Range query — used by activity engine for learning loop
-    if (from && to) {
-      if (stats === 'true') {
-        const patterns = await getVisitPatternStats(from, to);
-        return NextResponse.json({ patterns, from, to });
-      }
-      const status = searchParams.get('status') || undefined;
-      const reviews = await getVisitReviewsHistory(from, to, status);
-      return NextResponse.json({ reviews, from, to, count: reviews.length });
-    }
-
-    // Single-week query (original behaviour)
+    // Default to current week's Monday
     const now = new Date();
     const monday = new Date(now);
     monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
@@ -39,6 +23,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/visits — create visit review records (used by visit-review task)
 export async function POST(req: NextRequest) {
+  if (!verifyApiKey(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const body = await req.json();
 
@@ -66,6 +53,9 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/visits — update review status (visited, skipped, go-again)
 export async function PATCH(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const body = await req.json();
     const { id, status, place_id } = body;
@@ -76,22 +66,13 @@ export async function PATCH(req: NextRequest) {
 
     await updateVisitReviewStatus(id, status);
 
-    // Update place scoring based on review
+    // Update place scoring based on review — atomic increment.
     if (place_id) {
-      const place = await getPlace(place_id);
-      if (place) {
-        if (status === 'visited') {
-          await updatePlaceScoring(place_id, {
-            times_visited: place.times_visited + 1,
-            last_visited: new Date().toISOString(),
-          });
-        } else if (status === 'go-again') {
-          await updatePlaceScoring(place_id, {
-            times_visited: place.times_visited + 1,
-            last_visited: new Date().toISOString(),
-            liked: true,
-          });
-        }
+      const now = new Date().toISOString();
+      if (status === 'visited') {
+        await incrementPlaceCounter(place_id, 'times_visited', { last_visited: now });
+      } else if (status === 'go-again') {
+        await incrementPlaceCounter(place_id, 'times_visited', { last_visited: now, liked: true });
       }
     }
 

@@ -8,6 +8,8 @@ import { FinanceCard } from './cards/FinanceCard';
 import { WeatherCard } from './cards/WeatherCard';
 import { CalendarPreviewCard } from './cards/CalendarPreviewCard';
 import { JobCard } from './cards/JobCard';
+import { EmailCard } from './cards/EmailCard';
+import { WeeklyPlannerView } from './WeeklyPlannerView';
 import { v4 as uuidv4 } from 'uuid';
 
 interface MessageRow {
@@ -27,6 +29,7 @@ export function ThreadDetail({ task, onBack }: Props) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
+  const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,13 +71,12 @@ export function ThreadDetail({ task, onBack }: Props) {
     setMessages(prev => [...prev, newMsg]);
     setInput('');
 
-    // Persist
+    // Persist — on failure, roll back the optimistic insert and restore input
+    // so the user can retry instead of silently losing what they typed.
     try {
-      await fetch('/api/messages', {
+      const res = await fetch('/api/messages', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: newMsg.id,
           taskId: task.id,
@@ -83,8 +85,12 @@ export function ThreadDetail({ task, onBack }: Props) {
           isFromUser: true,
         }),
       });
+      if (!res.ok) throw new Error(`Send failed: ${res.status}`);
     } catch (e) {
       console.error('Failed to send message:', e);
+      setMessages(prev => prev.filter(m => m.id !== newMsg.id));
+      setInput(text);
+      setSendError('Couldn\u2019t send. Tap to retry.');
     }
   };
 
@@ -125,104 +131,113 @@ export function ThreadDetail({ task, onBack }: Props) {
         </div>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-            Loading messages...
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-            No messages yet. This task will post here on its next run.
-          </div>
-        ) : (
-          messages.map((msg) => {
-            const dateLabel = getDateLabel(msg.timestamp);
-            const showDate = dateLabel !== lastDateLabel;
-            lastDateLabel = dateLabel;
-
-            return (
-              <div key={msg.id}>
-                {showDate && (
-                  <div className="flex justify-center my-3">
-                    <span className="text-[11px] text-gray-400 bg-white/80 px-3 py-0.5 rounded-full">
-                      {dateLabel}
-                    </span>
-                  </div>
-                )}
-                <div className={`flex ${msg.is_from_user ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[90%] ${msg.is_from_user ? '' : ''}`}>
-                    {msg.blocks.map((block, i) => (
-                      <MessageBlockRenderer key={i} block={block} isUser={msg.is_from_user} />
-                    ))}
-                    <p className={`text-[10px] mt-0.5 ${msg.is_from_user ? 'text-right text-gray-400' : 'text-gray-400'}`}>
-                      {formatTime(msg.timestamp)}
-                    </p>
-                  </div>
-                </div>
+      {/* Weekly Planner view — replaces default chat for this task */}
+      {task.id === 'weekly-planner' ? (
+        <WeeklyPlannerView messages={messages} loading={loading} />
+      ) : (
+        <>
+          {/* Messages */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+            {loading ? (
+              <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+                Loading messages...
               </div>
-            );
-          })
-        )}
-      </div>
+            ) : messages.length === 0 ? (
+              <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+                No messages yet. This task will post here on its next run.
+              </div>
+            ) : (
+              messages.map((msg) => {
+                const dateLabel = getDateLabel(msg.timestamp);
+                const showDate = dateLabel !== lastDateLabel;
+                lastDateLabel = dateLabel;
 
-      {/* Quick replies */}
-      {task.quickReplies.length > 0 && (
-        <div className="flex gap-1.5 px-4 py-2 overflow-x-auto shrink-0 bg-white/80">
-          {task.quickReplies.map(reply => (
-            <button
-              key={reply}
-              onClick={() => sendQuickReply(reply)}
-              className="px-3 py-1.5 text-[12px] font-medium text-blue-600 bg-blue-50 rounded-full whitespace-nowrap hover:bg-blue-100 transition-colors"
-            >
-              {reply}
-            </button>
-          ))}
-        </div>
+                return (
+                  <div key={msg.id}>
+                    {showDate && (
+                      <div className="flex justify-center my-3">
+                        <span className="text-[11px] text-gray-400 bg-white/80 px-3 py-0.5 rounded-full">
+                          {dateLabel}
+                        </span>
+                      </div>
+                    )}
+                    <div className={`flex ${msg.is_from_user ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[90%] ${msg.is_from_user ? '' : ''}`}>
+                        {msg.blocks.map((block, i) => (
+                          <MessageBlockRenderer key={i} block={block} isUser={msg.is_from_user} />
+                        ))}
+                        <p className={`text-[10px] mt-0.5 ${msg.is_from_user ? 'text-right text-gray-400' : 'text-gray-400'}`}>
+                          {formatTime(msg.timestamp)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Quick replies */}
+          {task.quickReplies.length > 0 && (
+            <div className="flex gap-1.5 px-4 py-2 overflow-x-auto shrink-0 bg-white/80">
+              {task.quickReplies.map(reply => (
+                <button
+                  key={reply}
+                  onClick={() => sendQuickReply(reply)}
+                  className="px-3 py-1.5 text-[12px] font-medium text-blue-600 bg-blue-50 rounded-full whitespace-nowrap hover:bg-blue-100 transition-colors"
+                >
+                  {reply}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="border-t bg-white shrink-0">
+            {sendError && (
+              <button
+                onClick={() => { setSendError(null); sendMessage(input); }}
+                className="w-full px-4 py-1.5 text-[11px] text-red-600 bg-red-50 text-left active:bg-red-100"
+              >
+                {sendError}
+              </button>
+            )}
+            <div className="flex items-center gap-2 px-4 py-2 pb-6">
+              <input
+                type="text"
+                value={input}
+                onChange={e => { setInput(e.target.value); if (sendError) setSendError(null); }}
+                onKeyDown={e => e.key === 'Enter' && sendMessage(input)}
+                placeholder="Reply..."
+                className="flex-1 px-4 py-2 bg-gray-100 rounded-full text-sm outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <button
+                onClick={() => sendMessage(input)}
+                disabled={!input.trim()}
+                className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center disabled:opacity-30 shrink-0"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </>
       )}
-
-      {/* Input */}
-      <div className="flex items-center gap-2 px-4 py-2 pb-6 border-t bg-white shrink-0">
-        <input
-          type="text"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && sendMessage(input)}
-          placeholder="Reply..."
-          className="flex-1 px-4 py-2 bg-gray-100 rounded-full text-sm outline-none focus:ring-2 focus:ring-blue-200"
-        />
-        <button
-          onClick={() => sendMessage(input)}
-          disabled={!input.trim()}
-          className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center disabled:opacity-30 shrink-0"
-        >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-          </svg>
-        </button>
-      </div>
     </div>
   );
 }
 
-function MessageBlockRenderer({ block: rawBlock, isUser }: {
-  block: { type: string; data?: Record<string, unknown>; [key: string]: unknown };
+function MessageBlockRenderer({ block, isUser }: {
+  block: { type: string; data?: Record<string, unknown> };
   isUser: boolean;
 }) {
-  // Normalise: some tasks wrap data in .data, others put fields directly on the block
-  const block = {
-    type: rawBlock.type,
-    data: (rawBlock.data as Record<string, unknown>) || (rawBlock as Record<string, unknown>),
-  };
-
-  // Normalise text extraction — tasks use inconsistent keys (text, content, title)
-  const getText = (data: Record<string, unknown>): string =>
-    String(data.text ?? data.content ?? data.title ?? '');
+  if (!block.data) return null;
 
   if (isUser && block.type === 'text') {
     return (
       <div className="bg-blue-600 text-white rounded-2xl rounded-br-md px-3.5 py-2 text-[14px]">
-        {getText(block.data)}
+        {String(block.data.text)}
       </div>
     );
   }
@@ -230,14 +245,14 @@ function MessageBlockRenderer({ block: rawBlock, isUser }: {
   switch (block.type) {
     case 'text':
       return (
-        <div className="bg-white rounded-2xl rounded-bl-md px-3.5 py-2 text-[14px] text-gray-800 shadow-sm whitespace-pre-line">
-          {getText(block.data)}
+        <div className="bg-white rounded-2xl rounded-bl-md px-3.5 py-2 text-[14px] text-gray-800 shadow-sm">
+          {String(block.data.text)}
         </div>
       );
     case 'header':
       return (
         <div className="bg-white rounded-2xl rounded-bl-md px-3.5 py-2 shadow-sm">
-          <p className="text-[15px] font-semibold text-gray-900">{getText(block.data)}</p>
+          <p className="text-[15px] font-semibold text-gray-900">{String(block.data.text)}</p>
         </div>
       );
     case 'weather_card':
@@ -252,11 +267,13 @@ function MessageBlockRenderer({ block: rawBlock, isUser }: {
       return <CalendarPreviewCard data={block.data} />;
     case 'job_card':
       return <JobCard data={block.data} />;
+    case 'email_card':
+      return <EmailCard data={block.data} />;
     case 'section_header':
       return (
         <div className="py-1.5">
           <p className="text-[12px] font-semibold text-gray-500 uppercase tracking-wide">
-            {getText(block.data)}
+            {String(block.data.text)}
           </p>
         </div>
       );

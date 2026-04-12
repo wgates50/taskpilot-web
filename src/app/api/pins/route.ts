@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPins, togglePin } from '@/lib/db';
+import { verifyClient } from '@/lib/auth';
 
 // GET /api/pins
 export async function GET() {
@@ -14,6 +15,9 @@ export async function GET() {
 
 // POST /api/pins — { taskId: "morning-brief" }
 export async function POST(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const { taskId } = await req.json();
     if (!taskId) {

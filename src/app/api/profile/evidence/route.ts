@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { addEvidenceEntry, getEvidenceLog } from '@/lib/db';
+import { verifyClient } from '@/lib/auth';
 
 // GET /api/profile/evidence?limit=50
 export async function GET(req: NextRequest) {
@@ -13,8 +14,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/profile/evidence — tasks log new evidence
+// POST /api/profile/evidence — tasks and the webapp log new evidence
 export async function POST(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const entry = await req.json();
     if (!entry.taskId || !entry.type || !entry.detail) {

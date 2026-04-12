@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEvents, upsertEvent, updateEventStatus } from '@/lib/db';
-import { verifyApiKey } from '@/lib/auth';
+import { verifyApiKey, verifyClient } from '@/lib/auth';
 
 // GET /api/events?from=2026-04-08&to=2026-04-15&status=pending
 export async function GET(req: NextRequest) {
@@ -51,6 +51,9 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/events — update event status
 export async function PATCH(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const body = await req.json();
     const { id, status } = body;

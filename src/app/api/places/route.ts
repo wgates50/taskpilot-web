@@ -163,6 +163,9 @@ export async function DELETE(req: NextRequest) {
 
 // PATCH /api/places — update scoring OR enrichment metadata
 export async function PATCH(req: NextRequest) {
+  if (!verifyApiKey(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const body = await req.json();
     const rawId = body.id || body.notion_page_id;

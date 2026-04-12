@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { savePushSubscription, removePushSubscription } from '@/lib/db';
+import { verifyClient } from '@/lib/auth';
 
 // POST /api/push — subscribe to push notifications
 export async function POST(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const { subscription } = await req.json();
     if (!subscription?.endpoint) {
@@ -18,6 +22,9 @@ export async function POST(req: NextRequest) {
 
 // DELETE /api/push — unsubscribe
 export async function DELETE(req: NextRequest) {
+  if (!verifyClient(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const { endpoint } = await req.json();
     if (!endpoint) {

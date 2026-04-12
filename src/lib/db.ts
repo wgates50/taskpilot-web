@@ -336,7 +336,9 @@ export async function upsertPlace(place: Partial<PlaceRow> & { id: string; name:
       name = EXCLUDED.name,
       category = EXCLUDED.category,
       subcategory = EXCLUDED.subcategory,
-      cuisine_tags = EXCLUDED.cuisine_tags,
+      -- Tag arrays: preserve existing tags if the incoming upsert is empty.
+      -- Sync tasks reuploading place metadata shouldn't wipe enrichment tags.
+      cuisine_tags = CASE WHEN EXCLUDED.cuisine_tags = '[]'::jsonb THEN places.cuisine_tags ELSE EXCLUDED.cuisine_tags END,
       area = COALESCE(EXCLUDED.area, places.area),
       address = COALESCE(EXCLUDED.address, places.address),
       lat = COALESCE(EXCLUDED.lat, places.lat),
@@ -344,12 +346,12 @@ export async function upsertPlace(place: Partial<PlaceRow> & { id: string; name:
       google_maps_url = COALESCE(EXCLUDED.google_maps_url, places.google_maps_url),
       website = COALESCE(EXCLUDED.website, places.website),
       google_rating = COALESCE(EXCLUDED.google_rating, places.google_rating),
-      vibe_tags = EXCLUDED.vibe_tags,
-      time_tags = EXCLUDED.time_tags,
-      weather_tags = EXCLUDED.weather_tags,
-      social_tags = EXCLUDED.social_tags,
-      day_tags = EXCLUDED.day_tags,
-      season_tags = EXCLUDED.season_tags,
+      vibe_tags = CASE WHEN EXCLUDED.vibe_tags = '[]'::jsonb THEN places.vibe_tags ELSE EXCLUDED.vibe_tags END,
+      time_tags = CASE WHEN EXCLUDED.time_tags = '[]'::jsonb THEN places.time_tags ELSE EXCLUDED.time_tags END,
+      weather_tags = CASE WHEN EXCLUDED.weather_tags = '[]'::jsonb THEN places.weather_tags ELSE EXCLUDED.weather_tags END,
+      social_tags = CASE WHEN EXCLUDED.social_tags = '[]'::jsonb THEN places.social_tags ELSE EXCLUDED.social_tags END,
+      day_tags = CASE WHEN EXCLUDED.day_tags = '[]'::jsonb THEN places.day_tags ELSE EXCLUDED.day_tags END,
+      season_tags = CASE WHEN EXCLUDED.season_tags = '[]'::jsonb THEN places.season_tags ELSE EXCLUDED.season_tags END,
       price_tier = COALESCE(EXCLUDED.price_tier, places.price_tier),
       booking_type = COALESCE(EXCLUDED.booking_type, places.booking_type),
       duration = COALESCE(EXCLUDED.duration, places.duration),
@@ -364,95 +366,93 @@ export async function upsertPlace(place: Partial<PlaceRow> & { id: string; name:
   return result.rows[0] as PlaceRow;
 }
 
+// Whitelist of scoring columns — used to safely build dynamic UPDATEs.
+const SCORING_COLUMNS = [
+  'times_suggested', 'times_accepted', 'times_dismissed', 'times_visited',
+  'last_suggested', 'last_visited', 'liked',
+] as const;
+
+// Whitelist of enrichment columns. JSONB columns are stored as stringified arrays.
+const ENRICHMENT_COLUMNS = [
+  'lat', 'lng', 'google_place_id', 'google_rating', 'address', 'price_tier',
+  'vibe_tags', 'weather_tags', 'social_tags', 'day_tags', 'time_tags', 'season_tags',
+  'duration', 'enriched_at',
+] as const;
+const JSONB_ENRICHMENT_COLUMNS = new Set([
+  'vibe_tags', 'weather_tags', 'social_tags', 'day_tags', 'time_tags', 'season_tags',
+]);
+
+async function updatePlaceColumns(
+  id: string,
+  updates: Record<string, unknown>,
+  whitelist: readonly string[],
+  jsonbColumns?: Set<string>,
+): Promise<void> {
+  const setClauses: string[] = [];
+  const params: unknown[] = [];
+  for (const col of whitelist) {
+    if (updates[col] === undefined) continue;
+    let value = updates[col];
+    if (jsonbColumns?.has(col)) value = JSON.stringify(value);
+    params.push(value);
+    setClauses.push(`${col} = $${params.length}`);
+  }
+  if (setClauses.length === 0) return;
+  params.push(id);
+  const query = `UPDATE places SET ${setClauses.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`;
+  await sql.query(query, params);
+}
+
 export async function updatePlaceScoring(
   id: string,
   updates: Partial<Pick<PlaceRow, 'times_suggested' | 'times_accepted' | 'times_dismissed' | 'times_visited' | 'last_suggested' | 'last_visited' | 'liked'>>
 ): Promise<void> {
-  // Single query: use COALESCE to conditionally update only provided fields
-  // @vercel/postgres tagged templates require known placeholders, so we pass all
-  // fields and use COALESCE to keep the existing value when null is passed.
-  const ts = updates.times_suggested ?? null;
-  const ta = updates.times_accepted ?? null;
-  const td = updates.times_dismissed ?? null;
-  const tv = updates.times_visited ?? null;
-  const ls = updates.last_suggested ?? null;
-  const lv = updates.last_visited ?? null;
-  const lk = updates.liked ?? null;
+  await updatePlaceColumns(id, updates as Record<string, unknown>, SCORING_COLUMNS);
+}
 
-  await sql`
-    UPDATE places SET
-      times_suggested = COALESCE(${ts}::int, times_suggested),
-      times_accepted  = COALESCE(${ta}::int, times_accepted),
-      times_dismissed = COALESCE(${td}::int, times_dismissed),
-      times_visited   = COALESCE(${tv}::int, times_visited),
-      last_suggested  = COALESCE(${ls}::timestamptz, last_suggested),
-      last_visited    = COALESCE(${lv}::timestamptz, last_visited),
-      liked           = COALESCE(${lk}::bool, liked),
-      updated_at      = NOW()
-    WHERE id = ${id}
-  `;
+// Atomically bump a counter column on places without a read-then-write race.
+const COUNTER_COLUMNS = new Set(['times_suggested', 'times_accepted', 'times_dismissed', 'times_visited']);
+export async function incrementPlaceCounter(
+  id: string,
+  column: 'times_suggested' | 'times_accepted' | 'times_dismissed' | 'times_visited',
+  alsoSet?: { last_suggested?: string; last_visited?: string; liked?: boolean },
+): Promise<void> {
+  if (!COUNTER_COLUMNS.has(column)) throw new Error(`Invalid counter column: ${column}`);
+  const setClauses = [`${column} = ${column} + 1`];
+  const params: unknown[] = [];
+  if (alsoSet?.last_suggested !== undefined) {
+    params.push(alsoSet.last_suggested);
+    setClauses.push(`last_suggested = $${params.length}`);
+  }
+  if (alsoSet?.last_visited !== undefined) {
+    params.push(alsoSet.last_visited);
+    setClauses.push(`last_visited = $${params.length}`);
+  }
+  if (alsoSet?.liked !== undefined) {
+    params.push(alsoSet.liked);
+    setClauses.push(`liked = $${params.length}`);
+  }
+  params.push(id);
+  await sql.query(
+    `UPDATE places SET ${setClauses.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`,
+    params,
+  );
 }
 
 export async function updatePlaceEnrichment(
   id: string,
   updates: Partial<Pick<PlaceRow,
-    'lat' | 'lng' | 'google_place_id' | 'google_rating' | 'address' | 'area' | 'price_tier' |
+    'lat' | 'lng' | 'google_place_id' | 'google_rating' | 'address' | 'price_tier' |
     'vibe_tags' | 'weather_tags' | 'social_tags' | 'day_tags' | 'time_tags' | 'season_tags' |
     'duration' | 'enriched_at'
   >>
 ): Promise<void> {
-  // Single query with COALESCE — only updates fields that are explicitly provided
-  const lat = updates.lat ?? null;
-  const lng = updates.lng ?? null;
-  const gpid = updates.google_place_id ?? null;
-  const grating = updates.google_rating ?? null;
-  const addr = updates.address ?? null;
-  const ar = updates.area ?? null;
-  const ptier = updates.price_tier ?? null;
-  const vtags = updates.vibe_tags ? JSON.stringify(updates.vibe_tags) : null;
-  const wtags = updates.weather_tags ? JSON.stringify(updates.weather_tags) : null;
-  const stags = updates.social_tags ? JSON.stringify(updates.social_tags) : null;
-  const dtags = updates.day_tags ? JSON.stringify(updates.day_tags) : null;
-  const ttags = updates.time_tags ? JSON.stringify(updates.time_tags) : null;
-  const setags = updates.season_tags ? JSON.stringify(updates.season_tags) : null;
-  const dur = updates.duration ?? null;
-  const eat = updates.enriched_at ?? null;
-
-  await sql`
-    UPDATE places SET
-      lat             = COALESCE(${lat}::double precision, lat),
-      lng             = COALESCE(${lng}::double precision, lng),
-      google_place_id = COALESCE(${gpid}::text, google_place_id),
-      google_rating   = COALESCE(${grating}::numeric, google_rating),
-      address         = COALESCE(${addr}::text, address),
-      area            = COALESCE(${ar}::text, area),
-      price_tier      = COALESCE(${ptier}::text, price_tier),
-      vibe_tags       = COALESCE(${vtags}::jsonb, vibe_tags),
-      weather_tags    = COALESCE(${wtags}::jsonb, weather_tags),
-      social_tags     = COALESCE(${stags}::jsonb, social_tags),
-      day_tags        = COALESCE(${dtags}::jsonb, day_tags),
-      time_tags       = COALESCE(${ttags}::jsonb, time_tags),
-      season_tags     = COALESCE(${setags}::jsonb, season_tags),
-      duration        = COALESCE(${dur}::text, duration),
-      enriched_at     = COALESCE(${eat}::timestamptz, enriched_at),
-      updated_at      = NOW()
-    WHERE id = ${id}
-  `;
+  await updatePlaceColumns(id, updates as Record<string, unknown>, ENRICHMENT_COLUMNS, JSONB_ENRICHMENT_COLUMNS);
 }
 
 export async function getPlacesCount(): Promise<number> {
   const result = await sql`SELECT COUNT(*) as count FROM places`;
   return Number(result.rows[0].count);
-}
-
-// Delete a place by id. Repoints child rows in suggestions/visit_reviews to null
-// first so the foreign-key constraint doesn't block the delete. Returns whether
-// a row was actually removed.
-export async function deletePlace(id: string): Promise<boolean> {
-  await sql`UPDATE suggestions  SET place_id = NULL WHERE place_id = ${id}`;
-  await sql`UPDATE visit_reviews SET place_id = NULL WHERE place_id = ${id}`;
-  const result = await sql`DELETE FROM places WHERE id = ${id}`;
-  return (result.rowCount ?? 0) > 0;
 }
 
 export async function getPlacesStats(): Promise<{
@@ -543,56 +543,6 @@ export async function updateSuggestionStatus(id: number, status: string): Promis
   await sql`UPDATE suggestions SET status = ${status} WHERE id = ${id}`;
 }
 
-// Aggregate suggestion acceptance/dismissal stats per category and area.
-// Used by the activity engine learning loop.
-export async function getSuggestionPatternStats(fromDate: string, toDate: string): Promise<{
-  byCategory: Record<string, { accepted: number; dismissed: number; pending: number }>;
-  byArea: Record<string, { accepted: number; dismissed: number; pending: number }>;
-  byTimeSlot: Record<string, { accepted: number; dismissed: number; pending: number }>;
-  totals: { accepted: number; dismissed: number; pending: number };
-}> {
-  const result = await sql`
-    SELECT
-      p.category as place_category,
-      p.area as place_area,
-      s.suggested_for,
-      s.status,
-      COUNT(*)::int as cnt
-    FROM suggestions s
-    LEFT JOIN places p ON s.place_id = p.id
-    WHERE s.suggestion_date >= ${fromDate} AND s.suggestion_date <= ${toDate}
-    GROUP BY p.category, p.area, s.suggested_for, s.status
-  `;
-
-  const byCategory: Record<string, { accepted: number; dismissed: number; pending: number }> = {};
-  const byArea: Record<string, { accepted: number; dismissed: number; pending: number }> = {};
-  const byTimeSlot: Record<string, { accepted: number; dismissed: number; pending: number }> = {};
-  const totals = { accepted: 0, dismissed: 0, pending: 0 };
-
-  const blank = () => ({ accepted: 0, dismissed: 0, pending: 0 });
-
-  for (const row of result.rows) {
-    const r = row as { place_category: string | null; place_area: string | null; suggested_for: string | null; status: string; cnt: number };
-    const cat = r.place_category || 'unknown';
-    const area = r.place_area || 'unknown';
-    const slot = r.suggested_for || 'unknown';
-    const key = r.status === 'accepted' ? 'accepted' : r.status === 'dismissed' ? 'dismissed' : 'pending';
-
-    if (!byCategory[cat]) byCategory[cat] = blank();
-    byCategory[cat][key] += r.cnt;
-
-    if (!byArea[area]) byArea[area] = blank();
-    byArea[area][key] += r.cnt;
-
-    if (!byTimeSlot[slot]) byTimeSlot[slot] = blank();
-    byTimeSlot[slot][key] += r.cnt;
-
-    totals[key] += r.cnt;
-  }
-
-  return { byCategory, byArea, byTimeSlot, totals };
-}
-
 // ── Events Cache ──────────────────────────────────────────
 
 export interface EventCacheRow {
@@ -610,8 +560,6 @@ export interface EventCacheRow {
   closing_date: string | null;
   score: number | null;
   status: string;
-  lat: number | null;
-  lng: number | null;
   times_suggested: number;
   last_suggested: string | null;
   created_at: string;
@@ -623,7 +571,7 @@ export async function upsertEvent(event: Partial<EventCacheRow> & { id: string; 
     INSERT INTO events_cache (
       id, title, venue, date_start, date_end, category, price, url,
       calendar_link, tags, reason, closing_date, score, status,
-      lat, lng, times_suggested, last_suggested
+      times_suggested, last_suggested
     ) VALUES (
       ${event.id}, ${event.title}, ${event.venue || null},
       ${event.date_start || new Date().toISOString()}, ${event.date_end || null},
@@ -631,7 +579,6 @@ export async function upsertEvent(event: Partial<EventCacheRow> & { id: string; 
       ${event.calendar_link || null}, ${JSON.stringify(event.tags || [])},
       ${event.reason || null}, ${event.closing_date || null},
       ${event.score || null}, ${event.status || 'pending'},
-      ${event.lat ?? null}, ${event.lng ?? null},
       ${event.times_suggested || 0}, ${event.last_suggested || null}
     )
     ON CONFLICT (id) DO UPDATE SET
@@ -643,12 +590,10 @@ export async function upsertEvent(event: Partial<EventCacheRow> & { id: string; 
       price = COALESCE(EXCLUDED.price, events_cache.price),
       url = COALESCE(EXCLUDED.url, events_cache.url),
       calendar_link = COALESCE(EXCLUDED.calendar_link, events_cache.calendar_link),
-      tags = EXCLUDED.tags,
+      tags = CASE WHEN EXCLUDED.tags = '[]'::jsonb THEN events_cache.tags ELSE EXCLUDED.tags END,
       reason = COALESCE(EXCLUDED.reason, events_cache.reason),
       closing_date = COALESCE(EXCLUDED.closing_date, events_cache.closing_date),
       score = COALESCE(EXCLUDED.score, events_cache.score),
-      lat = COALESCE(EXCLUDED.lat, events_cache.lat),
-      lng = COALESCE(EXCLUDED.lng, events_cache.lng),
       updated_at = NOW()
     RETURNING *
   `;
@@ -751,76 +696,6 @@ export async function getVisitReviews(week: string, status?: string): Promise<(V
 
 export async function updateVisitReviewStatus(id: number, status: string): Promise<void> {
   await sql`UPDATE visit_reviews SET status = ${status}, reviewed_at = NOW() WHERE id = ${id}`;
-}
-
-// Fetch visit review history across a date range for pattern detection.
-// Returns reviews joined with place metadata, ordered newest-first.
-export async function getVisitReviewsHistory(
-  fromWeek: string,
-  toWeek: string,
-  status?: string,
-): Promise<(VisitReviewRow & { place_name?: string; place_category?: string; place_area?: string })[]> {
-  if (status) {
-    const result = await sql`
-      SELECT vr.*, p.name as place_name, p.category as place_category, p.area as place_area
-      FROM visit_reviews vr
-      LEFT JOIN places p ON vr.place_id = p.id
-      WHERE vr.review_week >= ${fromWeek} AND vr.review_week <= ${toWeek} AND vr.status = ${status}
-      ORDER BY vr.review_week DESC, vr.created_at DESC
-    `;
-    return result.rows as (VisitReviewRow & { place_name?: string; place_category?: string; place_area?: string })[];
-  }
-  const result = await sql`
-    SELECT vr.*, p.name as place_name, p.category as place_category, p.area as place_area
-    FROM visit_reviews vr
-    LEFT JOIN places p ON vr.place_id = p.id
-    WHERE vr.review_week >= ${fromWeek} AND vr.review_week <= ${toWeek}
-    ORDER BY vr.review_week DESC, vr.created_at DESC
-  `;
-  return result.rows as (VisitReviewRow & { place_name?: string; place_category?: string; place_area?: string })[];
-}
-
-// Aggregate acceptance/dismissal stats per category over a date range.
-// Used by the activity engine for learning-loop scoring adjustments.
-export async function getVisitPatternStats(fromWeek: string, toWeek: string): Promise<{
-  byCategory: Record<string, { visited: number; skipped: number; goAgain: number; pending: number }>;
-  byArea: Record<string, { visited: number; skipped: number; goAgain: number; pending: number }>;
-  totals: { visited: number; skipped: number; goAgain: number; pending: number };
-}> {
-  const result = await sql`
-    SELECT
-      p.category as place_category,
-      p.area as place_area,
-      vr.status,
-      COUNT(*)::int as cnt
-    FROM visit_reviews vr
-    LEFT JOIN places p ON vr.place_id = p.id
-    WHERE vr.review_week >= ${fromWeek} AND vr.review_week <= ${toWeek}
-    GROUP BY p.category, p.area, vr.status
-  `;
-
-  const byCategory: Record<string, { visited: number; skipped: number; goAgain: number; pending: number }> = {};
-  const byArea: Record<string, { visited: number; skipped: number; goAgain: number; pending: number }> = {};
-  const totals = { visited: 0, skipped: 0, goAgain: 0, pending: 0 };
-
-  const blank = () => ({ visited: 0, skipped: 0, goAgain: 0, pending: 0 });
-
-  for (const row of result.rows) {
-    const r = row as { place_category: string | null; place_area: string | null; status: string; cnt: number };
-    const cat = r.place_category || 'unknown';
-    const area = r.place_area || 'unknown';
-    const key = r.status === 'visited' ? 'visited' : r.status === 'skipped' ? 'skipped' : r.status === 'go-again' ? 'goAgain' : 'pending';
-
-    if (!byCategory[cat]) byCategory[cat] = blank();
-    byCategory[cat][key] += r.cnt;
-
-    if (!byArea[area]) byArea[area] = blank();
-    byArea[area][key] += r.cnt;
-
-    totals[key] += r.cnt;
-  }
-
-  return { byCategory, byArea, totals };
 }
 
 // ── Setup ─────────────────────────────────────────────────
@@ -971,18 +846,12 @@ export async function setupDatabase(): Promise<void> {
       closing_date DATE,
       score NUMERIC(5,2),
       status TEXT NOT NULL DEFAULT 'pending',
-      lat NUMERIC,
-      lng NUMERIC,
       times_suggested INTEGER NOT NULL DEFAULT 0,
       last_suggested TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
-  // Migrate existing deployments that already have an events_cache table
-  // without lat/lng columns.
-  await sql`ALTER TABLE events_cache ADD COLUMN IF NOT EXISTS lat NUMERIC`;
-  await sql`ALTER TABLE events_cache ADD COLUMN IF NOT EXISTS lng NUMERIC`;
   await sql`CREATE INDEX IF NOT EXISTS idx_events_date ON events_cache(date_start)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_events_closing ON events_cache(closing_date)`;
 

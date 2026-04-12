@@ -15,8 +15,9 @@ self.addEventListener('push', (event) => {
   const data = event.data.json();
   const options = {
     body: data.body || 'New update from TaskPilot',
-    icon: data.icon || '/icon-192.png',
-    badge: data.badge || '/badge-72.png',
+    // No icon/badge — referencing missing files makes Chrome drop the
+    // notification entirely on some platforms. Add real assets back here
+    // once /public/icon-*.png exist.
     data: data.data || {},
     vibrate: [100, 50, 100],
     actions: [

@@ -39,7 +39,7 @@ export function DashboardScreen() {
 
       <div className="flex-1 overflow-y-auto px-5 pb-6">
         {view === 'list' ? (
-          <div className="space-y-4 mt-3">
+          <div className="space-y-4 mt-3 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-4 lg:space-y-0">
             {groups.map(groupId => {
               const group = TASK_GROUPS[groupId];
               const tasks = TASKS.filter(t => t.group === groupId && !t.retired);
@@ -89,17 +89,17 @@ function RelationshipView() {
       name: 'Calendar Pipeline',
       color: '#3B82F6',
       flow: [
-        { tasks: ['email-to-calendar', 'weekly-london-event-scanner', 'london-openings-scanner'], label: 'Data Collection' },
+        { tasks: ['email-to-calendar', 'london-openings-scanner'], label: 'Data Collection' },
         { tasks: ['morning-brief', 'weekly-planner'], label: 'Delivery' },
       ],
     },
     {
-      name: 'Activity Pipeline',
+      name: 'Activity Engine',
       color: '#EC4899',
       flow: [
-        { tasks: ['data-sync-engine'], label: 'Data Sync' },
-        { tasks: ['daily-activity-engine'], label: 'Scoring' },
-        { tasks: ['visit-review'], label: 'Feedback' },
+        { tasks: ['data-sync-engine'], label: 'Sync' },
+        { tasks: ['daily-activity-engine'], label: 'Score' },
+        { tasks: ['visit-review'], label: 'Review' },
       ],
     },
     {
