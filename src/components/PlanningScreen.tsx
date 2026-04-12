@@ -1295,14 +1295,25 @@ export function PlanningScreen() {
                 return best;
               };
 
+              // ── Capacity awareness ──
+              // Days with calendar commitments get fewer suggestions.
+              // With 0 events the day is "wide open" → up to 3 per bucket.
+              // Each gcal event reduces capacity. 4+ events = very full day,
+              // show only 1 per free bucket (enough to catch something nearby).
+              const gcalEventCount = dayEvents.filter(e => e.id.startsWith('gcal-')).length;
+              const maxPerBucket = gcalEventCount === 0 ? 3
+                : gcalEventCount <= 2 ? 2
+                : 1; // 3+ calendar events → show at most 1 suggestion per bucket
+
               // Group suggestions by time-of-day bucket, with accepted pinned first
               const byBucket: Record<string, Array<{ s: Suggestion; nearby: ReturnType<typeof findNearbyAnchor>; adjScore: number }>> = {};
               for (const s of daySuggestions) {
                 const b = bucketFor(s.suggested_for);
                 const nearby = findNearbyAnchor(s);
-                // Boost score for cards within walking distance of an anchor
-                const boost = nearby ? 15 - nearby.km * 5 : 0; // ~15 at 0km, ~7.5 at 1.5km
-                const adjScore = Number(s.score) + boost;
+                // Boost score significantly for proximity to anchors — on busy days
+                // this effectively clusters suggestions near where you'll already be
+                const proximityBoost = nearby ? 20 - nearby.km * 10 : 0; // ~20 at 0km, ~5 at 1.5km
+                const adjScore = Number(s.score) + proximityBoost;
                 (byBucket[b] ||= []).push({ s, nearby, adjScore });
               }
               // Sort within each bucket: accepted pinned to top, then by adjusted score desc
@@ -1312,6 +1323,10 @@ export function PlanningScreen() {
                   if (b.s.status === 'accepted' && a.s.status !== 'accepted') return 1;
                   return b.adjScore - a.adjScore;
                 });
+                // Trim to capacity — keep accepted items + top N pending
+                const accepted = byBucket[b].filter(x => x.s.status === 'accepted');
+                const pending = byBucket[b].filter(x => x.s.status !== 'accepted').slice(0, maxPerBucket);
+                byBucket[b] = [...accepted, ...pending];
               }
 
               return (
@@ -1324,11 +1339,11 @@ export function PlanningScreen() {
                       {getDayLabel(date)}
                     </h2>
                     <span className="text-xs text-gray-500">{weekdayShort} {dayNumber}</span>
-                    {daySuggestions.length > 0 && (
-                      <span className="text-[10px] text-gray-400 ml-auto">
-                        {daySuggestions.length} pick{daySuggestions.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
+                    <span className="text-[10px] text-gray-400 ml-auto">
+                      {gcalEventCount > 0 && `${gcalEventCount} planned`}
+                      {gcalEventCount > 0 && daySuggestions.length > 0 && ' · '}
+                      {daySuggestions.length > 0 && `${daySuggestions.length} pick${daySuggestions.length !== 1 ? 's' : ''}`}
+                    </span>
                   </div>
 
                   {/* Day-level events (all-day, no time bucket) */}
@@ -1378,17 +1393,7 @@ export function PlanningScreen() {
             })}
             </div>
 
-            {/* Events section */}
-            {activeEvents.length > 0 && (
-              <div className="mt-6 mb-4">
-                <h2 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-1.5">
-                  <span>🎭</span> Events This Week
-                </h2>
-                {activeEvents.slice(0, 8).map(event => (
-                  <EventCard key={event.id} event={event} onAction={handleEventAction} />
-                ))}
-              </div>
-            )}
+            {/* Events are now shown inline on each day — no separate section needed */}
 
             {/* Empty state */}
             {Object.values(suggestions).every(s => s.length === 0) && activeEvents.length === 0 && pendingReviews.length === 0 && (
@@ -1695,10 +1700,12 @@ function EventCard({ event, onAction }: {
 }) {
   const emoji = event.category ? (CATEGORY_EMOJI[event.category] || CATEGORY_EMOJI[event.category.toLowerCase()] || '📅') : '📅';
   const isClosingSoon = event.closing_date && new Date(event.closing_date) <= new Date(Date.now() + 7 * 86400000);
+  const isFromCalendar = event.id.startsWith('gcal-');
   const isAccepted = event.status === 'accepted';
 
   return (
     <div className={`mb-2 p-3 bg-white rounded-xl border shadow-sm ${
+      isFromCalendar ? 'border-blue-100 bg-blue-50/30' :
       isAccepted ? 'border-green-200 bg-green-50/50' : 'border-gray-100'
     }`}>
       <div className="flex items-start justify-between gap-2">
@@ -1706,6 +1713,11 @@ function EventCard({ event, onAction }: {
           <div className="flex items-center gap-1.5 mb-0.5">
             <span className="text-sm">{emoji}</span>
             <h3 className="text-sm font-semibold text-gray-900 truncate">{event.title}</h3>
+            {isFromCalendar && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium shrink-0">
+                On calendar
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
             {event.venue && <span>{event.venue}</span>}
@@ -1717,23 +1729,54 @@ function EventCard({ event, onAction }: {
           <div className="flex items-center gap-1.5 mt-1.5">
             {isClosingSoon && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">
-                ⚠️ Closing soon
+                Closing soon
               </span>
             )}
-            {event.tags?.slice(0, 3).map(tag => (
+            {event.tags?.filter(t => t !== 'gcal' && t !== 'personal').slice(0, 3).map(tag => (
               <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{tag}</span>
             ))}
           </div>
         </div>
       </div>
 
-      {!isAccepted ? (
+      {isFromCalendar ? (
+        /* Calendar events — show links, not accept/dismiss */
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-50">
+          {event.url && (
+            <a
+              href={event.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100"
+            >
+              More info
+            </a>
+          )}
+          {event.venue && (
+            <a
+              href={`https://www.google.com/maps/search/${encodeURIComponent(event.venue + ' London')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium active:bg-gray-100"
+            >
+              Map
+            </a>
+          )}
+          <button
+            onClick={() => onAction(event.id, 'dismissed')}
+            className="ml-auto px-3 py-1.5 bg-gray-50 text-gray-400 rounded-lg text-xs font-medium active:bg-gray-100"
+            title="Hide from planning"
+          >
+            Hide
+          </button>
+        </div>
+      ) : !isAccepted ? (
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
           <button
             onClick={() => onAction(event.id, 'accepted')}
             className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100"
           >
-            📅 Add to Calendar
+            Add to Calendar
           </button>
           {event.url && (
             <a
@@ -1742,19 +1785,19 @@ function EventCard({ event, onAction }: {
               rel="noopener noreferrer"
               className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium active:bg-gray-100"
             >
-              🔗
+              Info
             </a>
           )}
           <button
             onClick={() => onAction(event.id, 'dismissed')}
             className="px-3 py-1.5 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium active:bg-gray-100"
           >
-            ✕
+            Dismiss
           </button>
         </div>
       ) : (
         <div className="flex items-center gap-1 mt-2 pt-2 border-t border-green-100">
-          <span className="text-xs text-green-600 font-medium">✓ Added to calendar</span>
+          <span className="text-xs text-green-600 font-medium">Added to calendar</span>
         </div>
       )}
     </div>
