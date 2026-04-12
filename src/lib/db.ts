@@ -396,7 +396,7 @@ export async function updatePlaceScoring(
 export async function updatePlaceEnrichment(
   id: string,
   updates: Partial<Pick<PlaceRow,
-    'lat' | 'lng' | 'google_place_id' | 'google_rating' | 'address' | 'price_tier' |
+    'lat' | 'lng' | 'google_place_id' | 'google_rating' | 'address' | 'area' | 'price_tier' |
     'vibe_tags' | 'weather_tags' | 'social_tags' | 'day_tags' | 'time_tags' | 'season_tags' |
     'duration' | 'enriched_at'
   >>
@@ -407,6 +407,7 @@ export async function updatePlaceEnrichment(
   const gpid = updates.google_place_id ?? null;
   const grating = updates.google_rating ?? null;
   const addr = updates.address ?? null;
+  const ar = updates.area ?? null;
   const ptier = updates.price_tier ?? null;
   const vtags = updates.vibe_tags ? JSON.stringify(updates.vibe_tags) : null;
   const wtags = updates.weather_tags ? JSON.stringify(updates.weather_tags) : null;
@@ -424,6 +425,7 @@ export async function updatePlaceEnrichment(
       google_place_id = COALESCE(${gpid}::text, google_place_id),
       google_rating   = COALESCE(${grating}::numeric, google_rating),
       address         = COALESCE(${addr}::text, address),
+      area            = COALESCE(${ar}::text, area),
       price_tier      = COALESCE(${ptier}::text, price_tier),
       vibe_tags       = COALESCE(${vtags}::jsonb, vibe_tags),
       weather_tags    = COALESCE(${wtags}::jsonb, weather_tags),

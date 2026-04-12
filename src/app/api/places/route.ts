@@ -178,7 +178,7 @@ export async function PATCH(req: NextRequest) {
 
     // Enrichment fields — route to updatePlaceEnrichment
     const enrichmentKeys = new Set([
-      'lat', 'lng', 'google_place_id', 'google_rating', 'address', 'price_tier',
+      'lat', 'lng', 'google_place_id', 'google_rating', 'address', 'area', 'price_tier',
       'vibe_tags', 'weather_tags', 'social_tags', 'day_tags', 'time_tags', 'season_tags',
       'duration', 'enriched_at',
     ]);
