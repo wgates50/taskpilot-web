@@ -878,10 +878,19 @@ export function PlanningScreen() {
     try {
       // Only call API for server-side suggestions (positive IDs)
       if (suggestionId > 0) {
+        // Find the suggestion_date so the PATCH handler can auto-create a
+        // visit_review for the right week when the action is "accepted".
+        let suggestionDate: string | undefined;
+        for (const key in suggestions) {
+          if (suggestions[key].some(s => s.id === suggestionId)) {
+            suggestionDate = key; // YYYY-MM-DD
+            break;
+          }
+        }
         await fetch('/api/suggestions', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: suggestionId, status: action, place_id: placeId }),
+          body: JSON.stringify({ id: suggestionId, status: action, place_id: placeId, suggestion_date: suggestionDate }),
         });
       }
       // Optimistic update

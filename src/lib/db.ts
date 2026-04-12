@@ -543,6 +543,56 @@ export async function updateSuggestionStatus(id: number, status: string): Promis
   await sql`UPDATE suggestions SET status = ${status} WHERE id = ${id}`;
 }
 
+// Aggregate suggestion acceptance/dismissal stats per category and area.
+// Used by the activity engine learning loop.
+export async function getSuggestionPatternStats(fromDate: string, toDate: string): Promise<{
+  byCategory: Record<string, { accepted: number; dismissed: number; pending: number }>;
+  byArea: Record<string, { accepted: number; dismissed: number; pending: number }>;
+  byTimeSlot: Record<string, { accepted: number; dismissed: number; pending: number }>;
+  totals: { accepted: number; dismissed: number; pending: number };
+}> {
+  const result = await sql`
+    SELECT
+      p.category as place_category,
+      p.area as place_area,
+      s.suggested_for,
+      s.status,
+      COUNT(*)::int as cnt
+    FROM suggestions s
+    LEFT JOIN places p ON s.place_id = p.id
+    WHERE s.suggestion_date >= ${fromDate} AND s.suggestion_date <= ${toDate}
+    GROUP BY p.category, p.area, s.suggested_for, s.status
+  `;
+
+  const byCategory: Record<string, { accepted: number; dismissed: number; pending: number }> = {};
+  const byArea: Record<string, { accepted: number; dismissed: number; pending: number }> = {};
+  const byTimeSlot: Record<string, { accepted: number; dismissed: number; pending: number }> = {};
+  const totals = { accepted: 0, dismissed: 0, pending: 0 };
+
+  const blank = () => ({ accepted: 0, dismissed: 0, pending: 0 });
+
+  for (const row of result.rows) {
+    const r = row as { place_category: string | null; place_area: string | null; suggested_for: string | null; status: string; cnt: number };
+    const cat = r.place_category || 'unknown';
+    const area = r.place_area || 'unknown';
+    const slot = r.suggested_for || 'unknown';
+    const key = r.status === 'accepted' ? 'accepted' : r.status === 'dismissed' ? 'dismissed' : 'pending';
+
+    if (!byCategory[cat]) byCategory[cat] = blank();
+    byCategory[cat][key] += r.cnt;
+
+    if (!byArea[area]) byArea[area] = blank();
+    byArea[area][key] += r.cnt;
+
+    if (!byTimeSlot[slot]) byTimeSlot[slot] = blank();
+    byTimeSlot[slot][key] += r.cnt;
+
+    totals[key] += r.cnt;
+  }
+
+  return { byCategory, byArea, byTimeSlot, totals };
+}
+
 // ── Events Cache ──────────────────────────────────────────
 
 export interface EventCacheRow {
@@ -701,6 +751,76 @@ export async function getVisitReviews(week: string, status?: string): Promise<(V
 
 export async function updateVisitReviewStatus(id: number, status: string): Promise<void> {
   await sql`UPDATE visit_reviews SET status = ${status}, reviewed_at = NOW() WHERE id = ${id}`;
+}
+
+// Fetch visit review history across a date range for pattern detection.
+// Returns reviews joined with place metadata, ordered newest-first.
+export async function getVisitReviewsHistory(
+  fromWeek: string,
+  toWeek: string,
+  status?: string,
+): Promise<(VisitReviewRow & { place_name?: string; place_category?: string; place_area?: string })[]> {
+  if (status) {
+    const result = await sql`
+      SELECT vr.*, p.name as place_name, p.category as place_category, p.area as place_area
+      FROM visit_reviews vr
+      LEFT JOIN places p ON vr.place_id = p.id
+      WHERE vr.review_week >= ${fromWeek} AND vr.review_week <= ${toWeek} AND vr.status = ${status}
+      ORDER BY vr.review_week DESC, vr.created_at DESC
+    `;
+    return result.rows as (VisitReviewRow & { place_name?: string; place_category?: string; place_area?: string })[];
+  }
+  const result = await sql`
+    SELECT vr.*, p.name as place_name, p.category as place_category, p.area as place_area
+    FROM visit_reviews vr
+    LEFT JOIN places p ON vr.place_id = p.id
+    WHERE vr.review_week >= ${fromWeek} AND vr.review_week <= ${toWeek}
+    ORDER BY vr.review_week DESC, vr.created_at DESC
+  `;
+  return result.rows as (VisitReviewRow & { place_name?: string; place_category?: string; place_area?: string })[];
+}
+
+// Aggregate acceptance/dismissal stats per category over a date range.
+// Used by the activity engine for learning-loop scoring adjustments.
+export async function getVisitPatternStats(fromWeek: string, toWeek: string): Promise<{
+  byCategory: Record<string, { visited: number; skipped: number; goAgain: number; pending: number }>;
+  byArea: Record<string, { visited: number; skipped: number; goAgain: number; pending: number }>;
+  totals: { visited: number; skipped: number; goAgain: number; pending: number };
+}> {
+  const result = await sql`
+    SELECT
+      p.category as place_category,
+      p.area as place_area,
+      vr.status,
+      COUNT(*)::int as cnt
+    FROM visit_reviews vr
+    LEFT JOIN places p ON vr.place_id = p.id
+    WHERE vr.review_week >= ${fromWeek} AND vr.review_week <= ${toWeek}
+    GROUP BY p.category, p.area, vr.status
+  `;
+
+  const byCategory: Record<string, { visited: number; skipped: number; goAgain: number; pending: number }> = {};
+  const byArea: Record<string, { visited: number; skipped: number; goAgain: number; pending: number }> = {};
+  const totals = { visited: 0, skipped: 0, goAgain: 0, pending: 0 };
+
+  const blank = () => ({ visited: 0, skipped: 0, goAgain: 0, pending: 0 });
+
+  for (const row of result.rows) {
+    const r = row as { place_category: string | null; place_area: string | null; status: string; cnt: number };
+    const cat = r.place_category || 'unknown';
+    const area = r.place_area || 'unknown';
+    const key = r.status === 'visited' ? 'visited' : r.status === 'skipped' ? 'skipped' : r.status === 'go-again' ? 'goAgain' : 'pending';
+
+    if (!byCategory[cat]) byCategory[cat] = blank();
+    byCategory[cat][key] += r.cnt;
+
+    if (!byArea[area]) byArea[area] = blank();
+    byArea[area][key] += r.cnt;
+
+    totals[key] += r.cnt;
+  }
+
+  return { byCategory, byArea, totals };
 }
 
 // ── Setup ─────────────────────────────────────────────────

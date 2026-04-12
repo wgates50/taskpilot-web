@@ -1,11 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getVisitReviews, insertVisitReview, updateVisitReviewStatus, updatePlaceScoring, getPlace } from '@/lib/db';
+import { getVisitReviews, getVisitReviewsHistory, getVisitPatternStats, insertVisitReview, updateVisitReviewStatus, updatePlaceScoring, getPlace } from '@/lib/db';
 
 // GET /api/visits?week=2026-04-07&status=pending
+// GET /api/visits?from=2026-03-01&to=2026-04-12 — history across weeks
+// GET /api/visits?from=2026-03-01&to=2026-04-12&stats=true — aggregated pattern stats
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    // Default to current week's Monday
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    const stats = searchParams.get('stats');
+
+    // Range query — used by activity engine for learning loop
+    if (from && to) {
+      if (stats === 'true') {
+        const patterns = await getVisitPatternStats(from, to);
+        return NextResponse.json({ patterns, from, to });
+      }
+      const status = searchParams.get('status') || undefined;
+      const reviews = await getVisitReviewsHistory(from, to, status);
+      return NextResponse.json({ reviews, from, to, count: reviews.length });
+    }
+
+    // Single-week query (original behaviour)
     const now = new Date();
     const monday = new Date(now);
     monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
