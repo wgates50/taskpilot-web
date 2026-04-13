@@ -81,6 +81,7 @@ export function CalendarScreen() {
   const { dates, label: weekLabel } = getWeekDates(weekOffset);
 
   const fetchEvents = useCallback(async () => {
+    if (mode === 'planner') { setLoading(false); return; } // Planner fetches its own data
     setLoading(true);
     try {
       const from = formatDate(dates[0]);
@@ -88,20 +89,27 @@ export function CalendarScreen() {
       const res = await fetch(`/api/events?from=${from}T00:00:00Z&to=${to}T23:59:59Z`);
       if (res.ok) {
         const data = await res.json();
-        setEvents(data.events || []);
+        // Sort by start time (chronological) rather than score
+        const sorted = (data.events || []).sort((a: CachedEvent, b: CachedEvent) =>
+          new Date(a.date_start).getTime() - new Date(b.date_start).getTime()
+        );
+        setEvents(sorted);
       }
     } catch (err) {
       console.error('Failed to fetch calendar events:', err);
     } finally {
       setLoading(false);
     }
-  }, [weekOffset]);
+  }, [weekOffset, mode]);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
-  // Filter events by mode
-  const personalEvents = events.filter(e => e.id.startsWith('gcal-'));
-  const whatsOnEvents = events.filter(e => !e.id.startsWith('gcal-'));
+  // Filter events by mode — What's On events have a 'cal:' prefixed tag
+  const isWhatsOn = (e: CachedEvent) =>
+    Array.isArray(e.tags) && e.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
+
+  const personalEvents = events.filter(e => !isWhatsOn(e));
+  const whatsOnEvents = events.filter(e => isWhatsOn(e));
 
   const displayEvents = mode === 'personal' ? personalEvents :
                          mode === 'whats-on' ? whatsOnEvents :
@@ -158,18 +166,20 @@ export function CalendarScreen() {
           ))}
         </div>
 
-        {/* Week navigator */}
-        <div className="flex items-center justify-between">
-          <button onClick={() => setWeekOffset(w => w - 1)} className="p-2 -ml-2 text-gray-500 active:text-gray-800">
-            <ChevronLeft />
-          </button>
-          <button onClick={() => setWeekOffset(0)} className="text-sm font-medium text-gray-700">
-            {weekLabel}
-          </button>
-          <button onClick={() => setWeekOffset(w => w + 1)} className="p-2 -mr-2 text-gray-500 active:text-gray-800">
-            <ChevronRight />
-          </button>
-        </div>
+        {/* Week navigator — hidden in planner mode (PlanningScreen has its own) */}
+        {mode !== 'planner' && (
+          <div className="flex items-center justify-between">
+            <button onClick={() => setWeekOffset(w => w - 1)} className="p-2 -ml-2 text-gray-500 active:text-gray-800">
+              <ChevronLeft />
+            </button>
+            <button onClick={() => setWeekOffset(0)} className="text-sm font-medium text-gray-700">
+              {weekLabel}
+            </button>
+            <button onClick={() => setWeekOffset(w => w + 1)} className="p-2 -mr-2 text-gray-500 active:text-gray-800">
+              <ChevronRight />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Content */}

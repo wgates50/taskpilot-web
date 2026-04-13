@@ -5,7 +5,7 @@ import { WeatherCard } from './cards/WeatherCard';
 import { EventCard } from './cards/EventCard';
 import { ArticleCard } from './cards/ArticleCard';
 import { CalendarPreviewCard } from './cards/CalendarPreviewCard';
-import { TASK_MAP } from '@/lib/tasks';
+// Task metadata no longer needed after reply strip removal
 
 // ── Types ────────────────────────────────────────────────
 
@@ -109,11 +109,7 @@ export function BriefScreen() {
   const [readingMsg, setReadingMsg] = useState<MessageRow | null>(null);
   const [briefLoading, setBriefLoading] = useState(true);
   const [readingLoading, setReadingLoading] = useState(true);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
-  const briefTask = TASK_MAP['morning-brief'];
 
   const fetchBrief = useCallback(async () => {
     try {
@@ -154,28 +150,6 @@ export function BriefScreen() {
     setRefreshing(false);
   };
 
-  const sendReply = async (text: string) => {
-    if (!text.trim() || sending) return;
-    setSending(true);
-    setInput('');
-    try {
-      await fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          taskId: 'morning-brief',
-          blocks: [{ type: 'text', data: { text } }],
-          timestamp: new Date().toISOString(),
-          isFromUser: true,
-        }),
-      });
-    } catch (e) {
-      console.error('Failed to send reply:', e);
-    } finally {
-      setSending(false);
-    }
-  };
-
   // Extract article blocks from reading digest
   const articleBlocks = (readingMsg?.blocks ?? []).filter(b => b.type === 'article_card');
 
@@ -208,7 +182,7 @@ export function BriefScreen() {
       </div>
 
       {/* ── Content ── */}
-      <div className="flex-1 overflow-y-auto px-4 pb-32">
+      <div className="flex-1 overflow-y-auto px-4 pb-24">
 
         {/* Morning Brief blocks */}
         {briefLoading ? (
@@ -263,43 +237,6 @@ export function BriefScreen() {
         )}
       </div>
 
-      {/* ── Reply strip ── */}
-      <div className="shrink-0 border-t bg-white/95 backdrop-blur-sm">
-        {/* Quick replies */}
-        {briefTask?.quickReplies && briefTask.quickReplies.length > 0 && (
-          <div className="flex gap-1.5 px-4 pt-2.5 overflow-x-auto">
-            {briefTask.quickReplies.map(reply => (
-              <button
-                key={reply}
-                onClick={() => sendReply(reply)}
-                className="px-3 py-1.5 text-[12px] font-medium text-blue-600 bg-blue-50 rounded-full whitespace-nowrap hover:bg-blue-100 transition-colors shrink-0"
-              >
-                {reply}
-              </button>
-            ))}
-          </div>
-        )}
-        {/* Text input */}
-        <div className="flex items-center gap-2 px-4 py-2 pb-6">
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && sendReply(input)}
-            placeholder="Reply to your brief…"
-            className="flex-1 px-4 py-2 bg-gray-100 rounded-full text-sm outline-none focus:ring-2 focus:ring-blue-200"
-          />
-          <button
-            onClick={() => sendReply(input)}
-            disabled={!input.trim() || sending}
-            className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center disabled:opacity-30 shrink-0"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-            </svg>
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
