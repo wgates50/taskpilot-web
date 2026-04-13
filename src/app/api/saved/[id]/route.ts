@@ -3,10 +3,11 @@ import { deleteSavedItem } from '@/lib/db';
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const deleted = await deleteSavedItem(params.id);
+    const { id } = await params;
+    const deleted = await deleteSavedItem(id);
     if (!deleted) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
