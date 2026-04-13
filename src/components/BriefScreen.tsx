@@ -182,59 +182,63 @@ export function BriefScreen() {
       </div>
 
       {/* ── Content ── */}
-      <div className="flex-1 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 overflow-y-auto px-4 lg:px-6 pb-24">
+        {/* Desktop: two-column layout — brief on left, reads on right */}
+        <div className="lg:grid lg:grid-cols-5 lg:gap-6 mt-4">
 
-        {/* Morning Brief blocks */}
-        {briefLoading ? (
-          <div className="mt-6 space-y-3">
-            {[80, 56, 96, 64].map((w, i) => (
-              <div key={i} className="bg-gray-200 animate-pulse rounded-xl h-20" style={{ opacity: 1 - i * 0.15 }} />
-            ))}
-          </div>
-        ) : briefMsg ? (
-          <div className="mt-4 space-y-2.5">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] text-gray-400">
-                Morning Brief · {timeAgo(briefMsg.timestamp)}
-              </span>
-            </div>
-            {briefBlocks.map((block, i) => (
-              <BriefBlock key={i} block={block} />
-            ))}
-          </div>
-        ) : (
-          <div className="mt-10 text-center">
-            <p className="text-3xl mb-2">☀️</p>
-            <p className="text-sm font-medium text-gray-700">No brief yet today</p>
-            <p className="text-xs text-gray-400 mt-1">Your morning brief runs at 6 AM</p>
-          </div>
-        )}
-
-        {/* Today's Reads */}
-        {!readingLoading && articleBlocks.length > 0 && (
-          <div className="mt-5 space-y-2.5">
-            <div className="flex items-center gap-2 pt-1 pb-0.5">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest whitespace-nowrap">
-                Today&apos;s Reads
-              </p>
-              <div className="flex-1 h-px bg-gray-200" />
-              {readingMsg && (
-                <span className="text-[10px] text-gray-400 whitespace-nowrap">
-                  {timeAgo(readingMsg.timestamp)}
+          {/* ── Left: Morning Brief (3/5 on desktop) ── */}
+          <div className="lg:col-span-3">
+            {briefLoading ? (
+              <div className="space-y-3">
+                {[80, 56, 96, 64].map((w, i) => (
+                  <div key={i} className="bg-gray-200 animate-pulse rounded-xl h-20" style={{ opacity: 1 - i * 0.15 }} />
+                ))}
+              </div>
+            ) : briefMsg ? (
+              <div className="space-y-2.5">
+                <span className="text-[10px] text-gray-400">
+                  Morning Brief · {timeAgo(briefMsg.timestamp)}
                 </span>
-              )}
-            </div>
-            {articleBlocks.map((block, i) => (
-              <ArticleCard key={i} data={block.data as Record<string, unknown>} />
-            ))}
+                {briefBlocks.map((block, i) => (
+                  <BriefBlock key={i} block={block} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-10">
+                <p className="text-3xl mb-2">☀️</p>
+                <p className="text-sm font-medium text-gray-700">No brief yet today</p>
+                <p className="text-xs text-gray-400 mt-1">Your morning brief runs at 6 AM</p>
+              </div>
+            )}
           </div>
-        )}
 
-        {readingLoading && (
-          <div className="mt-5">
-            <div className="bg-gray-200 animate-pulse rounded-xl h-28" />
+          {/* ── Right: Today's Reads (2/5 on desktop) ── */}
+          <div className="lg:col-span-2 mt-5 lg:mt-0">
+            {readingLoading ? (
+              <div className="space-y-3">
+                <div className="bg-gray-200 animate-pulse rounded-xl h-28" />
+                <div className="bg-gray-200 animate-pulse rounded-xl h-28 opacity-70" />
+              </div>
+            ) : articleBlocks.length > 0 ? (
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2 pb-0.5">
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                    Today&apos;s Reads
+                  </p>
+                  <div className="flex-1 h-px bg-gray-200" />
+                  {readingMsg && (
+                    <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                      {timeAgo(readingMsg.timestamp)}
+                    </span>
+                  )}
+                </div>
+                {articleBlocks.map((block, i) => (
+                  <ArticleCard key={i} data={block.data as Record<string, unknown>} />
+                ))}
+              </div>
+            ) : null}
           </div>
-        )}
+        </div>
       </div>
 
     </div>

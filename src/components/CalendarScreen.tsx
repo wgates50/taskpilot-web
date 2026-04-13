@@ -214,7 +214,7 @@ export function CalendarScreen() {
         <h1 className="text-xl font-bold text-gray-900 mb-2">Calendar</h1>
 
         {/* Mode switcher */}
-        <div className="flex bg-gray-100 rounded-lg p-0.5 mb-3">
+        <div className="flex bg-gray-100 rounded-md p-0.5 mb-3">
           {([
             { id: 'personal' as CalendarMode, label: 'My Calendar' },
             { id: 'whats-on' as CalendarMode, label: "What's On" },
@@ -424,16 +424,16 @@ function CalendarEventCard({
 
       {/* ── Past: Went / Didn't go ── */}
       {showWentDidntGo && (
-        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
           <button
             onClick={() => onAction(event.id, 'accepted')}
-            className="flex-1 py-1 rounded-md text-[11px] font-medium bg-gray-50 text-gray-600 active:bg-green-100 active:text-green-700"
+            className="flex-1 py-1 rounded-md text-[11px] font-medium border border-gray-200 text-gray-600 hover:bg-green-50 hover:border-green-200 hover:text-green-700 active:bg-green-100 transition-colors"
           >
             Went
           </button>
           <button
             onClick={() => onAction(event.id, 'dismissed')}
-            className="flex-1 py-1 rounded-md text-[11px] font-medium bg-gray-50 text-gray-600 active:bg-gray-100"
+            className="flex-1 py-1 rounded-md text-[11px] font-medium border border-gray-200 text-gray-500 hover:bg-gray-50 active:bg-gray-100 transition-colors"
           >
             Didn&apos;t go
           </button>
@@ -442,13 +442,13 @@ function CalendarEventCard({
 
       {/* ── Future What's On: Add to Calendar / Dismiss ── */}
       {showAddToCalendar && (
-        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
           {event.url && (
             <a
               href={event.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 py-1 bg-gray-50 text-gray-600 rounded-md text-[11px] font-medium text-center active:bg-gray-100"
+              className="flex-1 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium text-center hover:bg-gray-50 transition-colors"
             >
               More info
             </a>
@@ -456,13 +456,13 @@ function CalendarEventCard({
           <button
             onClick={() => onAddToCalendar(event)}
             disabled={isAdding}
-            className="flex-1 py-1 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium active:bg-blue-100 disabled:opacity-50"
+            className="flex-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
           >
             {isAdding ? 'Adding...' : '📅 Add to calendar'}
           </button>
           <button
             onClick={() => onAction(event.id, 'dismissed')}
-            className="px-2 py-1 bg-gray-50 text-gray-500 rounded-md text-[11px] font-medium active:bg-gray-100"
+            className="px-2 py-1 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors"
           >
             ✕
           </button>

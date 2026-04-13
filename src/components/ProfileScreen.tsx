@@ -109,7 +109,7 @@ export function ProfileScreen() {
         <p className="text-xs text-gray-400 mt-0.5">Features, connections & preferences</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 overflow-y-auto px-4 lg:px-6 pb-24">
         {/* Google Calendar banner */}
         {googleBanner && (
           <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-[12px] text-blue-700">
@@ -117,63 +117,70 @@ export function ProfileScreen() {
           </div>
         )}
 
-        {/* ── Connections ── */}
-        <SectionHeader label="Connections" />
-        <div className="space-y-1.5">
-          <SettingsRow
-            icon="📅"
-            title="Google Calendar"
-            subtitle={googleStatus?.connected ? 'Connected' : 'Not connected'}
-            trailing={googleStatus?.connected ? (
-              <span className="text-[11px] text-green-600 font-medium">✓</span>
-            ) : (
-              <a
-                href="/api/auth/google/consent"
-                className="text-[11px] font-medium text-white bg-blue-600 px-3 py-1 rounded-full"
-              >
-                Connect
-              </a>
-            )}
-          />
+        {/* Desktop: two-column grid for top sections */}
+        <div className="lg:grid lg:grid-cols-2 lg:gap-6">
+          <div>
+            {/* ── Connections ── */}
+            <SectionHeader label="Connections" />
+            <div className="space-y-1.5">
+              <SettingsRow
+                icon="📅"
+                title="Google Calendar"
+                subtitle={googleStatus?.connected ? 'Connected' : 'Not connected'}
+                trailing={googleStatus?.connected ? (
+                  <span className="text-[11px] text-green-600 font-medium">✓</span>
+                ) : (
+                  <a
+                    href="/api/auth/google/consent"
+                    className="text-[11px] font-medium text-blue-600 border border-blue-200 bg-blue-50 px-3 py-1 rounded-md hover:bg-blue-100 transition-colors"
+                  >
+                    Connect
+                  </a>
+                )}
+              />
+            </div>
+
+            {/* ── Data & Preferences ── */}
+            <SectionHeader label="Data & Preferences" />
+            <div className="space-y-1.5">
+              <SettingsRow
+                icon="🎯"
+                title="Taste Profile"
+                subtitle="Interests, venues & evidence log"
+                onClick={() => setView('taste-profile')}
+                trailing={<ChevronRight />}
+              />
+              <SettingsRow
+                icon="📍"
+                title="Places Database"
+                subtitle="290 places — restaurants, cafes, activities"
+                onClick={() => setView('places-db')}
+                trailing={<ChevronRight />}
+              />
+            </div>
+          </div>
+
+          <div>
+            {/* ── Features ── */}
+            <SectionHeader label="Features" />
+            <div className="space-y-1.5">
+              {activeTasks.map(task => (
+                <SettingsRow
+                  key={task.id}
+                  icon={task.icon}
+                  title={task.name}
+                  subtitle={task.schedule}
+                  onClick={() => { setSelectedTask(task); setView('task-detail'); }}
+                  trailing={<ChevronRight />}
+                />
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* ── Data & Preferences ── */}
-        <SectionHeader label="Data & Preferences" />
-        <div className="space-y-1.5">
-          <SettingsRow
-            icon="🎯"
-            title="Taste Profile"
-            subtitle="Interests, venues & evidence log"
-            onClick={() => setView('taste-profile')}
-            trailing={<ChevronRight />}
-          />
-          <SettingsRow
-            icon="📍"
-            title="Places Database"
-            subtitle="290 places — restaurants, cafes, activities"
-            onClick={() => setView('places-db')}
-            trailing={<ChevronRight />}
-          />
-        </div>
-
-        {/* ── Features ── */}
-        <SectionHeader label="Features" />
-        <div className="space-y-1.5">
-          {activeTasks.map(task => (
-            <SettingsRow
-              key={task.id}
-              icon={task.icon}
-              title={task.name}
-              subtitle={task.schedule}
-              onClick={() => { setSelectedTask(task); setView('task-detail'); }}
-              trailing={<ChevronRight />}
-            />
-          ))}
-        </div>
-
-        {/* ── Background Pipelines ── */}
+        {/* Background Pipelines — full width below on desktop */}
         <SectionHeader label="Background Pipelines" />
-        <div className="space-y-1.5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-1.5">
           {backgroundTasks.map(task => (
             <SettingsRow
               key={task.id}
@@ -367,7 +374,7 @@ function TasteProfileView({ onBack }: { onBack: () => void }) {
         <h1 className="text-lg font-bold text-gray-900 mt-1">Taste Profile</h1>
         <p className="text-xs text-gray-400 mt-0.5">Your preferences — shared across all tasks</p>
 
-        <div className="flex mt-3 bg-gray-100 rounded-lg p-0.5">
+        <div className="flex mt-3 bg-gray-100 rounded-md p-0.5">
           {(['interests', 'venues', 'evidence'] as const).map(t => (
             <button
               key={t}

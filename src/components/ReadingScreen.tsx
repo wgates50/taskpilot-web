@@ -72,18 +72,18 @@ export function ReadingScreen() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 pb-24">
+      <div className="flex-1 overflow-y-auto px-4 lg:px-6 pb-24">
 
         {/* Reading Digest */}
         <div className="mt-4">
           {readingLoading ? (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
               {[1, 2, 3].map(i => (
                 <div key={i} className="bg-gray-200 animate-pulse rounded-xl h-28" style={{ opacity: 1 - (i - 1) * 0.2 }} />
               ))}
             </div>
           ) : articleBlocks.length > 0 ? (
-            <div className="space-y-2.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
               {articleBlocks.map((block, i) => (
                 <ArticleCard key={i} data={block.data as Record<string, unknown>} />
               ))}

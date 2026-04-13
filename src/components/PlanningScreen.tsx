@@ -1101,7 +1101,7 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
             <button
               onClick={handleRescore}
               disabled={rescoring}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full text-sm font-medium active:bg-blue-100 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-sm font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
             >
               <span className={rescoring ? 'animate-spin' : ''}>✨</span>
               {rescoring ? 'Scoring...' : 'Suggest Now'}
@@ -1136,7 +1136,7 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
             <button
               onClick={handleRescore}
               disabled={rescoring}
-              className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-medium active:bg-blue-100 disabled:opacity-50"
+              className="flex items-center gap-1 px-2.5 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-xs font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
             >
               <span className={rescoring ? 'animate-spin' : ''}>✨</span>
               {rescoring ? 'Scoring…' : 'Suggest'}
@@ -1182,10 +1182,10 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                   <button
                     key={opt.mode}
                     onClick={() => updateContext('companions', { mode: opt.mode, detail: null })}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
                       context.companions?.mode === opt.mode
-                        ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
-                        : 'bg-gray-100 text-gray-600 active:bg-gray-200'
+                        ? 'border border-blue-200 bg-blue-50 text-blue-700'
+                        : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
                     }`}
                   >
                     <span>{opt.icon}</span>
@@ -1195,10 +1195,10 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                 {/* Working week toggle */}
                 <button
                   onClick={() => updateContext('working_week_mode', !context.working_week_mode)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ml-auto ${
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ml-auto ${
                     context.working_week_mode
-                      ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
-                      : 'bg-gray-100 text-gray-500'
+                      ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
+                      : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
                   }`}
                   title="Working week mode — no suggestions until 5pm on weekdays"
                 >
@@ -1219,18 +1219,18 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                       <p className="text-sm font-medium text-gray-800">{review.place_name || 'Unknown place'}</p>
                       <p className="text-xs text-gray-500">{review.place_area}</p>
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1.5">
                       <button
                         onClick={() => handleReviewAction(review.id, review.place_id, 'visited')}
-                        className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-md active:bg-green-200"
+                        className="px-2 py-1 text-xs border border-green-200 text-green-700 rounded-md hover:bg-green-50 transition-colors"
                       >✓ Visited</button>
                       <button
                         onClick={() => handleReviewAction(review.id, review.place_id, 'skipped')}
-                        className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md active:bg-gray-200"
+                        className="px-2 py-1 text-xs border border-gray-200 text-gray-600 rounded-md hover:bg-gray-50 transition-colors"
                       >✗ Nope</button>
                       <button
                         onClick={() => handleReviewAction(review.id, review.place_id, 'go-again')}
-                        className="px-2 py-1 text-xs bg-pink-100 text-pink-700 rounded-md active:bg-pink-200"
+                        className="px-2 py-1 text-xs border border-pink-200 text-pink-700 rounded-md hover:bg-pink-50 transition-colors"
                       >♡ Again</button>
                     </div>
                   </div>
@@ -1679,7 +1679,7 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor,
           <button
             onClick={() => onAction(s.id, s.place_id, 'accepted')}
             disabled={calendarAdding === s.place_id}
-            className="flex-1 py-1 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium active:bg-blue-100 disabled:opacity-50"
+            className="flex-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
           >
             📅 Calendar
           </button>
@@ -1688,7 +1688,7 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor,
               href={s.google_maps_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2 py-1 bg-gray-50 text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100"
+              className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
               title="Open in Google Maps"
             >
               📍
@@ -1699,7 +1699,7 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor,
               href={s.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2 py-1 bg-gray-50 text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100"
+              className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
               title="Website"
             >
               🔗
@@ -1707,14 +1707,14 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor,
           )}
           <button
             onClick={() => setExpanded(!expanded)}
-            className="px-2 py-1 bg-gray-50 text-gray-500 rounded-md text-[11px] font-medium active:bg-gray-100"
+            className="px-2 py-1 border border-gray-200 text-gray-500 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             title="More info"
           >
             {expanded ? '▲' : 'ⓘ'}
           </button>
           <button
             onClick={() => onAction(s.id, s.place_id, 'dismissed')}
-            className="px-2 py-1 bg-gray-50 text-gray-500 rounded-md text-[11px] font-medium active:bg-gray-100"
+            className="px-2 py-1 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             title="Dismiss"
           >
             ✕
@@ -1739,13 +1739,13 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor,
                     }),
                   }).catch(console.error);
                 }}
-                className="px-2 py-1 bg-green-100 text-green-700 rounded-md text-[11px] font-medium active:bg-green-200"
+                className="px-2 py-1 border border-green-200 text-green-700 rounded-md text-[11px] font-medium hover:bg-green-50 transition-colors"
               >
                 Went
               </button>
               <button
                 onClick={() => onDidntGo(s.id, s.place_id)}
-                className="px-2 py-1 bg-gray-100 text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-200"
+                className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
               >
                 Didn&apos;t go
               </button>
@@ -1811,7 +1811,7 @@ function BonusPickCard({
       <div className="flex items-center gap-1 mt-1.5">
         <button
           onClick={() => onAdd(place, anchor, dateKey)}
-          className="flex-1 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[11px] font-medium active:bg-emerald-200"
+          className="flex-1 py-1 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-md text-[11px] font-medium hover:bg-emerald-100 transition-colors"
         >
           📅 Add to Calendar
         </button>
@@ -1820,7 +1820,7 @@ function BonusPickCard({
             href={place.google_maps_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-2 py-1 bg-white text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100 border border-emerald-200"
+            className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             title="Open in Google Maps"
           >
             📍
@@ -1831,7 +1831,7 @@ function BonusPickCard({
             href={place.website}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-2 py-1 bg-white text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-100 border border-emerald-200"
+            className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             title="Website"
           >
             🔗
@@ -1839,7 +1839,7 @@ function BonusPickCard({
         )}
         <button
           onClick={() => onDismiss(place, dateKey)}
-          className="px-2 py-1 bg-white text-gray-500 rounded-md text-[11px] font-medium active:bg-gray-100 border border-emerald-200"
+          className="px-2 py-1 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
           title="Dismiss"
         >
           ✕
@@ -1904,7 +1904,7 @@ function EventCard({ event, onAction }: {
               href={event.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100"
+              className="px-3 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-xs font-medium hover:bg-blue-100 transition-colors"
             >
               More info
             </a>
@@ -1914,14 +1914,14 @@ function EventCard({ event, onAction }: {
               href={`https://www.google.com/maps/search/${encodeURIComponent(event.venue + ' London')}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium active:bg-gray-100"
+              className="px-3 py-1 border border-gray-200 text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
             >
               Map
             </a>
           )}
           <button
             onClick={() => onAction(event.id, 'dismissed')}
-            className="ml-auto px-3 py-1.5 bg-gray-50 text-gray-400 rounded-lg text-xs font-medium active:bg-gray-100"
+            className="ml-auto px-3 py-1 border border-gray-200 text-gray-400 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
             title="Hide from planning"
           >
             Hide
@@ -1931,7 +1931,7 @@ function EventCard({ event, onAction }: {
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
           <button
             onClick={() => onAction(event.id, 'accepted')}
-            className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium active:bg-blue-100"
+            className="flex-1 flex items-center justify-center gap-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-xs font-medium hover:bg-blue-100 transition-colors"
           >
             Add to Calendar
           </button>
@@ -1940,14 +1940,14 @@ function EventCard({ event, onAction }: {
               href={event.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium active:bg-gray-100"
+              className="px-3 py-1 border border-gray-200 text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
             >
               Info
             </a>
           )}
           <button
             onClick={() => onAction(event.id, 'dismissed')}
-            className="px-3 py-1.5 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium active:bg-gray-100"
+            className="px-3 py-1 border border-gray-200 text-gray-500 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
           >
             Dismiss
           </button>
