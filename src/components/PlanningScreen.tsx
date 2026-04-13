@@ -1858,12 +1858,12 @@ function EventCard({ event, onAction }: {
   // Personal events (no cal: tag) are already on the user's calendar.
   // What's On events (has cal: tag) are discovery items that can be added.
   const isFromCalendar = !Array.isArray(event.tags) || !event.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
-  const isAccepted = event.status === 'accepted';
+  // The sync sets status='accepted' on ALL events (both personal and What's On),
+  // so we can't trust DB status. What's On events always show Add/Dismiss buttons.
 
   return (
     <div className={`mb-2 p-3 bg-white rounded-xl border shadow-sm ${
-      isFromCalendar ? 'border-blue-100 bg-blue-50/30' :
-      isAccepted ? 'border-green-200 bg-green-50/50' : 'border-gray-100'
+      isFromCalendar ? 'border-blue-100 bg-blue-50/30' : 'border-gray-100'
     }`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
@@ -1897,13 +1897,14 @@ function EventCard({ event, onAction }: {
       </div>
 
       {isFromCalendar ? (
-        /* Calendar events — show links, not accept/dismiss */
+        /* Personal calendar events — show links, not accept/dismiss */
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-50">
           {event.url && (
             <a
               href={event.url}
               target="_blank"
               rel="noopener noreferrer"
+              title={event.reason && !event.reason.startsWith('Synced from') ? event.reason : `View details for ${event.title}`}
               className="px-3 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-xs font-medium hover:bg-blue-100 transition-colors"
             >
               More info
@@ -1914,6 +1915,7 @@ function EventCard({ event, onAction }: {
               href={`https://www.google.com/maps/search/${encodeURIComponent(event.venue + ' London')}`}
               target="_blank"
               rel="noopener noreferrer"
+              title={`Find ${event.venue} on Google Maps`}
               className="px-3 py-1 border border-gray-200 text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
             >
               Map
@@ -1922,15 +1924,17 @@ function EventCard({ event, onAction }: {
           <button
             onClick={() => onAction(event.id, 'dismissed')}
             className="ml-auto px-3 py-1 border border-gray-200 text-gray-400 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
-            title="Hide from planning"
+            title="Hide from planning view"
           >
             Hide
           </button>
         </div>
-      ) : !isAccepted ? (
+      ) : (
+        /* What's On events — always show Add/Dismiss (sync status is meaningless) */
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
           <button
             onClick={() => onAction(event.id, 'accepted')}
+            title="Add this event to your Google Calendar"
             className="flex-1 flex items-center justify-center gap-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-xs font-medium hover:bg-blue-100 transition-colors"
           >
             Add to Calendar
@@ -1940,6 +1944,7 @@ function EventCard({ event, onAction }: {
               href={event.url}
               target="_blank"
               rel="noopener noreferrer"
+              title={event.reason && !event.reason.startsWith('Synced from') ? event.reason : `View details for ${event.title}`}
               className="px-3 py-1 border border-gray-200 text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
             >
               Info
@@ -1947,14 +1952,11 @@ function EventCard({ event, onAction }: {
           )}
           <button
             onClick={() => onAction(event.id, 'dismissed')}
+            title="Dismiss — hide this event"
             className="px-3 py-1 border border-gray-200 text-gray-500 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
           >
             Dismiss
           </button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-green-100">
-          <span className="text-xs text-green-600 font-medium">Added to calendar</span>
         </div>
       )}
     </div>

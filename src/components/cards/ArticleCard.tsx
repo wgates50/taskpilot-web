@@ -1,9 +1,51 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+// Extract the real destination URL from a click-tracker redirect
+function extractDomain(url: string): string {
+  try {
+    // Check if it's a redirect URL with a ?url= param
+    const u = new URL(url);
+    const inner = u.searchParams.get('url');
+    if (inner) {
+      return new URL(inner).hostname.replace(/^www\./, '');
+    }
+    return u.hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function getFaviconUrl(url: string): string {
+  const domain = extractDomain(url);
+  if (!domain) return '';
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+}
+
+// Generate a colour from the topic string for the accent bar
+function topicColor(topic: string): string {
+  const colors: Record<string, string> = {
+    'tech-ai': '#6366f1',
+    'tech': '#3b82f6',
+    'culture': '#ec4899',
+    'food': '#f59e0b',
+    'travel': '#10b981',
+    'science': '#06b6d4',
+    'design': '#8b5cf6',
+    'finance': '#059669',
+    'music': '#e11d48',
+    'sport': '#ea580c',
+    'london': '#dc2626',
+    'news': '#64748b',
+  };
+  const key = Object.keys(colors).find(k => topic.toLowerCase().includes(k));
+  return key ? colors[key] : '#94a3b8';
+}
 
 export function ArticleCard({ data }: { data: Record<string, unknown> }) {
   const [reaction, setReaction] = useState<string | null>(null);
+  const [faviconError, setFaviconError] = useState(false);
 
   const title = String(data.title || '');
   const source = String(data.source || '');
@@ -14,67 +56,104 @@ export function ArticleCard({ data }: { data: Record<string, unknown> }) {
   const isDiscovery = Boolean(data.isDiscovery);
   const readingTime = Number(data.readingTimeMinutes || 0);
 
+  const favicon = getFaviconUrl(url);
+  const accent = topicColor(topic);
+
   return (
-    <div className={`rounded-xl px-3.5 py-3 shadow-sm border ${
+    <div className={`rounded-xl shadow-sm border overflow-hidden ${
       isDiscovery ? 'bg-violet-50 border-violet-200' : 'bg-white border-gray-100'
     }`}>
-      {/* Meta row */}
-      <div className="flex items-center gap-1.5 text-[11px] text-gray-500 mb-1">
-        {isDiscovery && (
-          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">
-            Discovery
-          </span>
-        )}
-        <span>{topicEmoji} {topic}</span>
-        <span>&middot;</span>
-        <span>{source}</span>
-        {readingTime > 0 && <><span>&middot;</span><span>{readingTime} min</span></>}
-      </div>
+      {/* Accent bar */}
+      <div className="h-1" style={{ backgroundColor: accent }} />
 
-      <a href={url} target="_blank" rel="noopener noreferrer" className="block">
-        <p className="text-[14px] font-semibold text-gray-900 hover:text-blue-700">{title}</p>
-      </a>
-      {summary && (
-        <p className="text-[12px] text-gray-500 mt-1 leading-relaxed">{summary}</p>
-      )}
+      <div className="px-3.5 py-3">
+        {/* Source row with favicon */}
+        <div className="flex items-center gap-2 mb-2">
+          {favicon && !faviconError && (
+            <img
+              src={favicon}
+              alt=""
+              width={16}
+              height={16}
+              className="rounded-sm shrink-0"
+              onError={() => setFaviconError(true)}
+            />
+          )}
+          <span className="text-[11px] font-medium text-gray-600">{source}</span>
+          <div className="flex items-center gap-1.5 ml-auto text-[11px] text-gray-400">
+            {isDiscovery && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                Discovery
+              </span>
+            )}
+            <span>{topicEmoji} {topic}</span>
+            {readingTime > 0 && (
+              <span className="flex items-center gap-0.5">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {readingTime} min
+              </span>
+            )}
+          </div>
+        </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-2 mt-2.5">
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-3 py-1 text-[11px] font-medium text-blue-600 border border-blue-200 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
-        >
-          Read
+        {/* Title */}
+        <a href={url} target="_blank" rel="noopener noreferrer" className="block group">
+          <h3 className="text-[14px] font-semibold text-gray-900 group-hover:text-blue-700 transition-colors leading-snug">
+            {title}
+          </h3>
         </a>
-        <button
-          onClick={() => setReaction('saved')}
-          className={`px-3 py-1 text-[11px] font-medium rounded-md transition-colors ${
-            reaction === 'saved'
-              ? 'border border-blue-200 bg-blue-50 text-blue-600'
-              : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
-          }`}
-        >
-          Save
-        </button>
-        <div className="flex items-center gap-1 ml-auto">
+
+        {/* Summary — show full text */}
+        {summary && (
+          <p className="text-[12px] text-gray-500 mt-1.5 leading-relaxed">
+            {summary}
+          </p>
+        )}
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-gray-100">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Read full article on ${source}`}
+            className="px-3 py-1 text-[11px] font-medium text-blue-600 border border-blue-200 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
+          >
+            Read
+          </a>
           <button
-            onClick={() => setReaction('up')}
-            className={`w-7 h-7 flex items-center justify-center text-[13px] rounded-md transition-colors ${
-              reaction === 'up' ? 'bg-green-50 border border-green-200' : 'border border-gray-200 hover:bg-gray-50'
+            onClick={() => setReaction('saved')}
+            title={reaction === 'saved' ? 'Saved to your reading list' : 'Save for later'}
+            className={`px-3 py-1 text-[11px] font-medium rounded-md transition-colors ${
+              reaction === 'saved'
+                ? 'border border-blue-200 bg-blue-50 text-blue-600'
+                : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
             }`}
           >
-            &#x1F44D;
+            Save
           </button>
-          <button
-            onClick={() => setReaction('down')}
-            className={`w-7 h-7 flex items-center justify-center text-[13px] rounded-md transition-colors ${
-              reaction === 'down' ? 'bg-red-50 border border-red-200' : 'border border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            &#x1F44E;
-          </button>
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={() => setReaction('up')}
+              title="More like this"
+              className={`w-7 h-7 flex items-center justify-center text-[13px] rounded-md transition-colors ${
+                reaction === 'up' ? 'bg-green-50 border border-green-200' : 'border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              &#x1F44D;
+            </button>
+            <button
+              onClick={() => setReaction('down')}
+              title="Less like this"
+              className={`w-7 h-7 flex items-center justify-center text-[13px] rounded-md transition-colors ${
+                reaction === 'down' ? 'bg-red-50 border border-red-200' : 'border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              &#x1F44E;
+            </button>
+          </div>
         </div>
       </div>
     </div>

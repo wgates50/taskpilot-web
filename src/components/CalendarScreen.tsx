@@ -62,7 +62,9 @@ function getDayLabel(d: Date): string {
   return d.toLocaleDateString('en-GB', { weekday: 'long' });
 }
 
-function formatTime(isoStr: string): string {
+function formatTime(isoStr: string, tags?: string[]): string {
+  // Check the all-day tag first — UTC midnight shows as 1am in BST otherwise
+  if (tags?.includes('all-day')) return 'All day';
   const d = new Date(isoStr);
   const h = d.getHours();
   const m = d.getMinutes();
@@ -370,7 +372,7 @@ function CalendarEventCard({
   onAction: (id: string, action: 'accepted' | 'dismissed') => void;
   isAdding: boolean;
 }) {
-  const timeLabel = formatTime(event.date_start);
+  const timeLabel = formatTime(event.date_start, event.tags);
 
   // Personal events are already on the user's calendar — no "Add" needed.
   // What's On events need an explicit "Add to calendar" action.
@@ -408,7 +410,7 @@ function CalendarEventCard({
           {event.venue && (
             <p className="text-xs text-gray-500 truncate mt-0.5">{event.venue}</p>
           )}
-          {event.reason && (
+          {event.reason && !event.reason.startsWith('Synced from') && (
             <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{event.reason}</p>
           )}
           <div className="flex items-center gap-1.5 mt-1">
@@ -427,12 +429,14 @@ function CalendarEventCard({
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
           <button
             onClick={() => onAction(event.id, 'accepted')}
+            title="Mark as attended — helps improve future suggestions"
             className="flex-1 py-1 rounded-md text-[11px] font-medium border border-gray-200 text-gray-600 hover:bg-green-50 hover:border-green-200 hover:text-green-700 active:bg-green-100 transition-colors"
           >
             Went
           </button>
           <button
             onClick={() => onAction(event.id, 'dismissed')}
+            title="Mark as skipped"
             className="flex-1 py-1 rounded-md text-[11px] font-medium border border-gray-200 text-gray-500 hover:bg-gray-50 active:bg-gray-100 transition-colors"
           >
             Didn&apos;t go
@@ -448,6 +452,7 @@ function CalendarEventCard({
               href={event.url}
               target="_blank"
               rel="noopener noreferrer"
+              title={event.reason && !event.reason.startsWith('Synced from') ? event.reason : `View details for ${event.title}`}
               className="flex-1 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium text-center hover:bg-gray-50 transition-colors"
             >
               More info
@@ -456,12 +461,14 @@ function CalendarEventCard({
           <button
             onClick={() => onAddToCalendar(event)}
             disabled={isAdding}
+            title="Add this event to your Google Calendar"
             className="flex-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
           >
             {isAdding ? 'Adding...' : '📅 Add to calendar'}
           </button>
           <button
             onClick={() => onAction(event.id, 'dismissed')}
+            title="Dismiss — hide this event"
             className="px-2 py-1 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors"
           >
             ✕
