@@ -403,6 +403,11 @@ async function updatePlaceColumns(
   await sql.query(query, params);
 }
 
+export async function deletePlace(id: string): Promise<boolean> {
+  const result = await sql`DELETE FROM places WHERE id = ${id}`;
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function updatePlaceScoring(
   id: string,
   updates: Partial<Pick<PlaceRow, 'times_suggested' | 'times_accepted' | 'times_dismissed' | 'times_visited' | 'last_suggested' | 'last_visited' | 'liked'>>
