@@ -173,6 +173,27 @@ function bucketFor(suggestedFor: string | null): string {
   return 'evening';
 }
 
+// Map a What's On event to a time bucket based on its category/title
+function bucketForEvent(event: CachedEvent): string {
+  const cat = (event.category || '').toLowerCase();
+  const title = event.title.toLowerCase();
+  // Markets, brunches, breakfasts → morning
+  if (cat.includes('market') || title.includes('market') || title.includes('flea') ||
+      title.includes('brunch') || title.includes('breakfast')) return 'morning';
+  // Art, exhibitions, museums, outdoor, walks → afternoon
+  if (cat.includes('art') || cat.includes('culture') || cat.includes('museum') ||
+      cat.includes('gallery') || cat.includes('outdoor') || cat.includes('leisure') ||
+      title.includes('exhibition') || title.includes('gallery') || title.includes('museum') ||
+      title.includes('walk') || title.includes('park') || title.includes('free')) return 'afternoon';
+  // Restaurants, dinner, film, comedy, theatre, music → evening
+  if (cat.includes('food') || cat.includes('restaurant') || cat.includes('film') ||
+      cat.includes('cinema') || cat.includes('theatre') || cat.includes('comedy') ||
+      cat.includes('music') || title.includes('dinner') || title.includes('imax')) return 'evening';
+  // Default — afternoon for all-day events, evening for timed events
+  const tags = event.tags || [];
+  return tags.includes('all-day') ? 'afternoon' : 'evening';
+}
+
 function titleCase(s: string): string {
   return s.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -1181,7 +1202,13 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                 {COMPANION_OPTIONS.map(opt => (
                   <button
                     key={opt.mode}
-                    onClick={() => updateContext('companions', { mode: opt.mode, detail: null })}
+                    onClick={() => {
+                      updateContext('companions', { mode: opt.mode, detail: null });
+                      // Auto-rescore with new companion mode after a short delay
+                      // so the context update has time to propagate
+                      setTimeout(() => handleRescore(), 300);
+                    }}
+                    title={`Set companion mode to ${opt.label} — rescores suggestions`}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
                       context.companions?.mode === opt.mode
                         ? 'border border-blue-200 bg-blue-50 text-blue-700'
@@ -1200,7 +1227,7 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                       ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
                       : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
                   }`}
-                  title="Working week mode — no suggestions until 5pm on weekdays"
+                  title={context.working_week_mode ? 'Work mode ON — hides suggestions until 5pm on weekdays' : 'Enable work mode — hides suggestions until 5pm on weekdays'}
                 >
                   <span>{context.working_week_mode ? '💼' : '💼'}</span>
                   <span>Work mode</span>
@@ -1461,50 +1488,73 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                     </span>
                   </div>
 
-                  {/* Day-level events (all-day, no time bucket) */}
-                  {dayEvents.map(event => (
-                    <EventCard key={event.id} event={event} onAction={handleEventAction} />
-                  ))}
-
-                  {/* Time-of-day sections */}
-                  {TIME_BUCKETS.map(bucket => {
-                    const picks = byBucket[bucket.key] || [];
-                    const bonusPicks = bonusPicksByBucket[bucket.key] || [];
-                    if (picks.length === 0 && bonusPicks.length === 0) return null;
-                    return (
-                      <div key={bucket.key} className="mb-2">
-                        <div className="flex items-center gap-1.5 mb-1 px-1">
-                          <span className="text-xs">{bucket.icon}</span>
-                          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                            {bucket.label}
-                          </span>
-                          <div className="flex-1 h-px bg-gray-200 ml-1" />
-                        </div>
-                        {picks.map(({ s, nearby }) => (
-                          <SuggestionCard
-                            key={s.id}
-                            suggestion={s}
-                            onAction={handleAction}
-                            calendarAdding={calendarAdding}
-                            nearbyAnchor={nearby ? { name: nearby.anchor.name, km: nearby.km } : null}
-                            isPast={isPast}
-                            onDidntGo={handleDidntGo}
-                          />
-                        ))}
-                        {bonusPicks.map(bp => (
-                          <BonusPickCard
-                            key={`bonus-${bp.place.id}`}
-                            place={bp.place}
-                            anchor={bp.anchor}
-                            km={bp.km}
-                            dateKey={dateKey}
-                            onAdd={handleBonusAdd}
-                            onDismiss={handleBonusDismiss}
-                          />
-                        ))}
-                      </div>
+                  {/* Split events: personal stay at day level, What's On merge into buckets */}
+                  {(() => {
+                    const personalEvents = dayEvents.filter(e =>
+                      !Array.isArray(e.tags) || !e.tags.some(t => typeof t === 'string' && t.startsWith('cal:'))
                     );
-                  })}
+                    const whatsOnEvents = dayEvents.filter(e =>
+                      Array.isArray(e.tags) && e.tags.some(t => typeof t === 'string' && t.startsWith('cal:'))
+                    );
+                    // Bucket What's On events by category/title
+                    const eventsByBucket: Record<string, CachedEvent[]> = {};
+                    for (const ev of whatsOnEvents) {
+                      const b = bucketForEvent(ev);
+                      (eventsByBucket[b] ||= []).push(ev);
+                    }
+                    return (
+                      <>
+                        {/* Personal calendar events at day level */}
+                        {personalEvents.map(event => (
+                          <EventCard key={event.id} event={event} onAction={handleEventAction} />
+                        ))}
+
+                        {/* Time-of-day sections — suggestions + What's On merged */}
+                        {TIME_BUCKETS.map(bucket => {
+                          const picks = byBucket[bucket.key] || [];
+                          const bonusPicks = bonusPicksByBucket[bucket.key] || [];
+                          const bucketEvents = eventsByBucket[bucket.key] || [];
+                          if (picks.length === 0 && bonusPicks.length === 0 && bucketEvents.length === 0) return null;
+                          return (
+                            <div key={bucket.key} className="mb-2">
+                              <div className="flex items-center gap-1.5 mb-1 px-1">
+                                <span className="text-xs">{bucket.icon}</span>
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                                  {bucket.label}
+                                </span>
+                                <div className="flex-1 h-px bg-gray-200 ml-1" />
+                              </div>
+                              {picks.map(({ s, nearby }) => (
+                                <SuggestionCard
+                                  key={s.id}
+                                  suggestion={s}
+                                  onAction={handleAction}
+                                  calendarAdding={calendarAdding}
+                                  nearbyAnchor={nearby ? { name: nearby.anchor.name, km: nearby.km } : null}
+                                  isPast={isPast}
+                                  onDidntGo={handleDidntGo}
+                                />
+                              ))}
+                              {bucketEvents.map(event => (
+                                <EventCard key={event.id} event={event} onAction={handleEventAction} />
+                              ))}
+                              {bonusPicks.map(bp => (
+                                <BonusPickCard
+                                  key={`bonus-${bp.place.id}`}
+                                  place={bp.place}
+                                  anchor={bp.anchor}
+                                  km={bp.km}
+                                  dateKey={dateKey}
+                                  onAdd={handleBonusAdd}
+                                  onDismiss={handleBonusDismiss}
+                                />
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -1855,57 +1905,79 @@ function EventCard({ event, onAction }: {
 }) {
   const emoji = event.category ? (CATEGORY_EMOJI[event.category] || CATEGORY_EMOJI[event.category.toLowerCase()] || '📅') : '📅';
   const isClosingSoon = event.closing_date && new Date(event.closing_date) <= new Date(Date.now() + 7 * 86400000);
-  // Personal events (no cal: tag) are already on the user's calendar.
-  // What's On events (has cal: tag) are discovery items that can be added.
   const isFromCalendar = !Array.isArray(event.tags) || !event.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
-  // The sync sets status='accepted' on ALL events (both personal and What's On),
-  // so we can't trust DB status. What's On events always show Add/Dismiss buttons.
+  const visibleTags = event.tags?.filter(t => t !== 'gcal' && t !== 'personal' && t !== 'all-day' && !t.startsWith('cal:')).slice(0, 3) || [];
+  // Extract venue details — strip emoji prefix from title for cleaner display
+  const cleanTitle = event.title.replace(/^[\p{Emoji}\s]+/u, '').trim() || event.title;
+  // Parse parenthetical venue/location from title: "Event Name (Venue, Area)"
+  const parenMatch = cleanTitle.match(/^(.+?)\s*\(([^)]+)\)$/);
+  const displayTitle = parenMatch ? parenMatch[1].trim() : cleanTitle;
+  const parenDetail = parenMatch ? parenMatch[2].trim() : null;
 
   return (
-    <div className={`mb-2 p-3 bg-white rounded-xl border shadow-sm ${
+    <div className={`mb-1.5 px-3 py-2 bg-white rounded-lg border shadow-sm ${
       isFromCalendar ? 'border-blue-100 bg-blue-50/30' : 'border-gray-100'
     }`}>
-      <div className="flex items-start justify-between gap-2">
+      {/* Title row — matches SuggestionCard layout */}
+      <div className="flex items-start gap-2">
+        <span className="text-base leading-none mt-0.5">{emoji}</span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <span className="text-sm">{emoji}</span>
-            <h3 className="text-sm font-semibold text-gray-900 truncate">{event.title}</h3>
+          <div className="flex items-baseline gap-1.5">
+            <h3 className="text-sm font-semibold text-gray-900 truncate">{displayTitle}</h3>
             {isFromCalendar && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium shrink-0">
                 On calendar
               </span>
             )}
-          </div>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            {event.venue && <span>{event.venue}</span>}
-            {event.price && <span>· {event.price}</span>}
-          </div>
-          {event.reason && (
-            <p className="text-xs text-gray-500 mt-1">{event.reason}</p>
-          )}
-          <div className="flex items-center gap-1.5 mt-1.5">
-            {isClosingSoon && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">
-                Closing soon
-              </span>
+            {event.score != null && (
+              <span className="ml-auto text-[10px] text-gray-400 shrink-0">{Math.round(event.score)}</span>
             )}
-            {event.tags?.filter(t => t !== 'gcal' && t !== 'personal' && t !== 'all-day' && !t.startsWith('cal:')).slice(0, 3).map(tag => (
-              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{tag}</span>
-            ))}
           </div>
+
+          {/* Meta line — venue/area, price */}
+          <div className="text-[11px] text-gray-600 truncate">
+            {parenDetail && <span>{parenDetail}</span>}
+            {!parenDetail && event.venue && <span>{event.venue}</span>}
+            {parenDetail && event.venue && event.venue !== parenDetail && (
+              <span> · {event.venue}</span>
+            )}
+            {event.price && <span> · <span className="text-gray-500">{event.price}</span></span>}
+            {event.category && <span> · <span className="text-gray-500">{titleCase(event.category)}</span></span>}
+          </div>
+
+          {/* Tags row */}
+          {(visibleTags.length > 0 || isClosingSoon) && (
+            <div className="flex items-center gap-1 mt-1 flex-wrap">
+              {isClosingSoon && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">
+                  Closing soon
+                </span>
+              )}
+              {!isFromCalendar && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium">
+                  What&apos;s On
+                </span>
+              )}
+              {visibleTags.map(tag => (
+                <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                  {titleCase(tag)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Actions — same button style as SuggestionCard */}
       {isFromCalendar ? (
-        /* Personal calendar events — show links, not accept/dismiss */
-        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-50">
+        <div className="flex items-center gap-1 mt-1.5">
           {event.url && (
             <a
               href={event.url}
               target="_blank"
               rel="noopener noreferrer"
               title={event.reason && !event.reason.startsWith('Synced from') ? event.reason : `View details for ${event.title}`}
-              className="px-3 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-xs font-medium hover:bg-blue-100 transition-colors"
+              className="px-2 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium hover:bg-blue-100 transition-colors"
             >
               More info
             </a>
@@ -1916,28 +1988,27 @@ function EventCard({ event, onAction }: {
               target="_blank"
               rel="noopener noreferrer"
               title={`Find ${event.venue} on Google Maps`}
-              className="px-3 py-1 border border-gray-200 text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
+              className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             >
-              Map
+              📍
             </a>
           )}
           <button
             onClick={() => onAction(event.id, 'dismissed')}
-            className="ml-auto px-3 py-1 border border-gray-200 text-gray-400 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
+            className="px-2 py-1 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             title="Hide from planning view"
           >
-            Hide
+            ✕
           </button>
         </div>
       ) : (
-        /* What's On events — always show Add/Dismiss (sync status is meaningless) */
-        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
+        <div className="flex items-center gap-1 mt-1.5">
           <button
             onClick={() => onAction(event.id, 'accepted')}
             title="Add this event to your Google Calendar"
-            className="flex-1 flex items-center justify-center gap-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-xs font-medium hover:bg-blue-100 transition-colors"
+            className="flex-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium hover:bg-blue-100 transition-colors"
           >
-            Add to Calendar
+            📅 Calendar
           </button>
           {event.url && (
             <a
@@ -1945,17 +2016,28 @@ function EventCard({ event, onAction }: {
               target="_blank"
               rel="noopener noreferrer"
               title={event.reason && !event.reason.startsWith('Synced from') ? event.reason : `View details for ${event.title}`}
-              className="px-3 py-1 border border-gray-200 text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
+              className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             >
-              Info
+              ⓘ
+            </a>
+          )}
+          {event.venue && (
+            <a
+              href={`https://www.google.com/maps/search/${encodeURIComponent(event.venue + ' London')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Find ${event.venue} on Google Maps`}
+              className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
+            >
+              📍
             </a>
           )}
           <button
             onClick={() => onAction(event.id, 'dismissed')}
             title="Dismiss — hide this event"
-            className="px-3 py-1 border border-gray-200 text-gray-500 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors"
+            className="px-2 py-1 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
           >
-            Dismiss
+            ✕
           </button>
         </div>
       )}
