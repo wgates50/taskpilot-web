@@ -112,6 +112,7 @@ interface VisitReview {
 interface UserContext {
   location?: { area: string; lat: number; lng: number };
   companions?: { mode: string; detail: string | null };
+  working_week_mode?: boolean;
 }
 
 interface WeatherData {
@@ -247,6 +248,20 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Returns true if working week mode should suppress suggestions for this date.
+// Suppresses today only, and only before 17:00 on Mon–Fri.
+// Future weekdays always show (you're planning ahead).
+function isWorkingHoursSuppressed(date: Date): boolean {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dateNormalised = new Date(date);
+  dateNormalised.setHours(0, 0, 0, 0);
+  if (dateNormalised.getTime() !== today.getTime()) return false; // not today
+  const dow = today.getDay(); // 0=Sun, 6=Sat
+  if (dow === 0 || dow === 6) return false; // weekend
+  return new Date().getHours() < 17;
 }
 
 function getTimeSlot(): 'morning' | 'lunch' | 'afternoon' | 'evening' | 'late' {
@@ -1018,6 +1033,45 @@ export function PlanningScreen() {
     }
   };
 
+  // "Didn't go" — mark an accepted suggestion as not visited.
+  // Posts to the visit review endpoint with status 'skipped'.
+  const handleDidntGo = async (suggestionId: number, placeId: string) => {
+    try {
+      // Find the suggestion date for the visit review
+      let suggestionDate: string | undefined;
+      for (const key in suggestions) {
+        if (suggestions[key].some(s => s.id === suggestionId)) {
+          suggestionDate = key;
+          break;
+        }
+      }
+      if (suggestionDate) {
+        // Create a "skipped" visit review
+        await fetch('/api/visits', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            place_id: placeId,
+            status: 'skipped',
+            review_week: suggestionDate,
+          }),
+        });
+      }
+      // Optimistic UI — mark the suggestion as dismissed so it visually fades
+      setSuggestions(prev => {
+        const updated = { ...prev };
+        for (const key in updated) {
+          updated[key] = updated[key].map(s =>
+            s.id === suggestionId ? { ...s, status: 'didnt-go' } : s
+          );
+        }
+        return updated;
+      });
+    } catch (err) {
+      console.error('Didn\'t go action failed:', err);
+    }
+  };
+
   const updateContext = async (key: string, value: unknown) => {
     try {
       await fetch('/api/context', {
@@ -1039,9 +1093,9 @@ export function PlanningScreen() {
   return (
     <div className="flex flex-col h-full bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b px-4 pt-12 pb-3">
+      <div className="bg-white border-b px-4 pt-12 lg:pt-4 pb-3">
         <div className="flex items-center justify-between mb-2">
-          <h1 className="text-xl font-bold text-gray-900">Planning</h1>
+          <h1 className="text-xl font-bold text-gray-900">Events</h1>
           <button
             onClick={handleRescore}
             disabled={rescoring}
@@ -1095,7 +1149,7 @@ export function PlanningScreen() {
                   {gpsStatus === 'active' ? 'GPS' : gpsStatus === 'denied' ? 'No GPS' : 'auto'}
                 </span>
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 flex-wrap">
                 {COMPANION_OPTIONS.map(opt => (
                   <button
                     key={opt.mode}
@@ -1110,6 +1164,19 @@ export function PlanningScreen() {
                     <span>{opt.label}</span>
                   </button>
                 ))}
+                {/* Working week toggle */}
+                <button
+                  onClick={() => updateContext('working_week_mode', !context.working_week_mode)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ml-auto ${
+                    context.working_week_mode
+                      ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}
+                  title="Working week mode — no suggestions until 5pm on weekdays"
+                >
+                  <span>{context.working_week_mode ? '💼' : '💼'}</span>
+                  <span>Work mode</span>
+                </button>
               </div>
             </div>
 
@@ -1147,7 +1214,9 @@ export function PlanningScreen() {
             <div className="mt-2 lg:grid lg:grid-cols-2 lg:gap-x-4 xl:grid-cols-3">
             {dates.map(date => {
               const dateKey = formatDate(date);
-              const daySuggestions = suggestions[dateKey] || [];
+              // Working week mode: suppress today's suggestions before 5pm on weekdays
+              const workingSuppressed = context.working_week_mode && isWorkingHoursSuppressed(date);
+              const daySuggestions = workingSuppressed ? [] : (suggestions[dateKey] || []);
               // Dedup — when the user adds an accepted suggestion to Google
               // Calendar via Option A, the next calendar-sync run pulls it
               // back as a gcal-categorised event. We'd then render BOTH rows
@@ -1257,6 +1326,22 @@ export function PlanningScreen() {
                   (bonusPicksByBucket[anchorBucket] ||= []).push(n);
                   usedPlaceIds.add(n.place.id); // don't re-suggest same place via another anchor
                 }
+              }
+
+              // Working week suppression banner (today, weekday, before 5pm)
+              if (workingSuppressed) {
+                return (
+                  <div
+                    key={dateKey}
+                    className="mt-2 px-3 py-2.5 bg-indigo-50/60 rounded-lg border border-indigo-100 border-l-2 border-l-indigo-400"
+                  >
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <h2 className="text-xs font-semibold text-indigo-600">{getDayLabel(date)}</h2>
+                      <span className="text-[10px] text-gray-400">{weekdayShort} {dayNumber}</span>
+                    </div>
+                    <p className="text-[11px] text-indigo-500">Suggestions unlock after 5pm — enjoy your workday.</p>
+                  </div>
+                );
               }
 
               // Empty day — single-line tight row
@@ -1372,6 +1457,8 @@ export function PlanningScreen() {
                             onAction={handleAction}
                             calendarAdding={calendarAdding}
                             nearbyAnchor={nearby ? { name: nearby.anchor.name, km: nearby.km } : null}
+                            isPast={isPast}
+                            onDidntGo={handleDidntGo}
                           />
                         ))}
                         {bonusPicks.map(bp => (
@@ -1412,16 +1499,19 @@ export function PlanningScreen() {
 
 // ── Card Components ───────────────────────────────────────
 
-function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor }: {
+function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor, isPast, onDidntGo }: {
   suggestion: Suggestion;
   onAction: (id: number, placeId: string, action: 'accepted' | 'dismissed') => void;
   calendarAdding: string | null;
   nearbyAnchor?: { name: string; km: number } | null;
+  isPast?: boolean;
+  onDidntGo?: (suggestionId: number, placeId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const emoji = CATEGORY_EMOJI[s.category] || CATEGORY_EMOJI[s.category?.toLowerCase()] || '📍';
   const booking = s.booking_type ? BOOKING_LABELS[s.booking_type] : null;
   const isAccepted = s.status === 'accepted';
+  const isDidntGo = s.status === 'didnt-go';
   const isLocal = s.id < 0;
 
   // Meta line: subcategory → cuisine → duration
@@ -1445,6 +1535,7 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor 
 
   return (
     <div className={`mb-1.5 px-3 py-2 bg-white rounded-lg border shadow-sm ${
+      isDidntGo ? 'border-gray-200 bg-gray-50/50 opacity-60' :
       isAccepted ? 'border-green-200 bg-green-50/50' :
       isLocal ? 'border-blue-200 bg-blue-50/30' :
       'border-gray-100'
@@ -1551,7 +1642,9 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor 
       )}
 
       {/* Actions — compact row */}
-      {!isAccepted ? (
+      {isDidntGo ? (
+        <div className="mt-1.5 text-[11px] text-gray-400 font-medium">Didn&apos;t go</div>
+      ) : !isAccepted ? (
         <div className="flex items-center gap-1 mt-1.5">
           <button
             onClick={() => onAction(s.id, s.place_id, 'accepted')}
@@ -1597,8 +1690,40 @@ function SuggestionCard({ suggestion: s, onAction, calendarAdding, nearbyAnchor 
             ✕
           </button>
         </div>
+      ) : isPast ? (
+        /* Past accepted suggestion — show Went / Didn't go buttons */
+        <div className="flex items-center gap-1.5 mt-1.5">
+          <span className="text-[11px] text-green-600 font-medium mr-auto">Added to calendar</span>
+          {onDidntGo && (
+            <>
+              <button
+                onClick={() => {
+                  // Mark as "visited" — same endpoint as didnt-go but with visited status
+                  fetch('/api/visits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      place_id: s.place_id,
+                      status: 'visited',
+                      review_week: s.suggestion_date,
+                    }),
+                  }).catch(console.error);
+                }}
+                className="px-2 py-1 bg-green-100 text-green-700 rounded-md text-[11px] font-medium active:bg-green-200"
+              >
+                Went
+              </button>
+              <button
+                onClick={() => onDidntGo(s.id, s.place_id)}
+                className="px-2 py-1 bg-gray-100 text-gray-600 rounded-md text-[11px] font-medium active:bg-gray-200"
+              >
+                Didn&apos;t go
+              </button>
+            </>
+          )}
+        </div>
       ) : (
-        <div className="mt-1.5 text-[11px] text-green-600 font-medium">✓ Added to calendar</div>
+        <div className="mt-1.5 text-[11px] text-green-600 font-medium">Added to calendar</div>
       )}
     </div>
   );
