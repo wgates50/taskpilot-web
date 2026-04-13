@@ -590,7 +590,7 @@ function useGeoLocation(onUpdate: (lat: number, lng: number, area: string) => vo
 
 // ── Main Component ───────────────────────────────────────
 
-export function PlanningScreen() {
+export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [suggestions, setSuggestions] = useState<Record<string, Suggestion[]>>({});
   const [events, setEvents] = useState<CachedEvent[]>([]);
@@ -1091,37 +1091,64 @@ export function PlanningScreen() {
   // ── Render ─────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b px-4 pt-12 lg:pt-4 pb-3">
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-xl font-bold text-gray-900">Events</h1>
-          <button
-            onClick={handleRescore}
-            disabled={rescoring}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full text-sm font-medium active:bg-blue-100 disabled:opacity-50"
-          >
-            <span className={rescoring ? 'animate-spin' : ''}>✨</span>
-            {rescoring ? 'Scoring...' : 'Suggest Now'}
-          </button>
-        </div>
+    <div className={`flex flex-col ${embedded ? '' : 'h-full'} bg-gray-50`}>
+      {/* Header — hidden when embedded inside CalendarScreen */}
+      {!embedded && (
+        <div className="bg-white border-b px-4 pt-12 lg:pt-4 pb-3">
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-xl font-bold text-gray-900">Events</h1>
+            <button
+              onClick={handleRescore}
+              disabled={rescoring}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full text-sm font-medium active:bg-blue-100 disabled:opacity-50"
+            >
+              <span className={rescoring ? 'animate-spin' : ''}>✨</span>
+              {rescoring ? 'Scoring...' : 'Suggest Now'}
+            </button>
+          </div>
 
-        {/* Week navigator */}
-        <div className="flex items-center justify-between">
-          <button onClick={() => setWeekOffset(w => w - 1)} className="p-2 -ml-2 text-gray-500 active:text-gray-800">
+          {/* Week navigator */}
+          <div className="flex items-center justify-between">
+            <button onClick={() => setWeekOffset(w => w - 1)} className="p-2 -ml-2 text-gray-500 active:text-gray-800">
+              <ChevronLeft />
+            </button>
+            <button onClick={() => setWeekOffset(0)} className="text-sm font-medium text-gray-700">
+              📅 {weekLabel}
+            </button>
+            <button onClick={() => setWeekOffset(w => w + 1)} className="p-2 -mr-2 text-gray-500 active:text-gray-800">
+              <ChevronRight />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Embedded header — compact week navigator */}
+      {embedded && (
+        <div className="flex items-center justify-between px-1 pb-2 pt-1">
+          <button onClick={() => setWeekOffset(w => w - 1)} className="p-1.5 text-gray-500">
             <ChevronLeft />
           </button>
-          <button onClick={() => setWeekOffset(0)} className="text-sm font-medium text-gray-700">
-            📅 {weekLabel}
-          </button>
-          <button onClick={() => setWeekOffset(w => w + 1)} className="p-2 -mr-2 text-gray-500 active:text-gray-800">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setWeekOffset(0)} className="text-sm font-medium text-gray-700">
+              {weekLabel}
+            </button>
+            <button
+              onClick={handleRescore}
+              disabled={rescoring}
+              className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-medium active:bg-blue-100 disabled:opacity-50"
+            >
+              <span className={rescoring ? 'animate-spin' : ''}>✨</span>
+              {rescoring ? 'Scoring…' : 'Suggest'}
+            </button>
+          </div>
+          <button onClick={() => setWeekOffset(w => w + 1)} className="p-1.5 text-gray-500">
             <ChevronRight />
           </button>
         </div>
-      </div>
+      )}
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto px-4 pb-24">
+      <div className={`${embedded ? 'px-0 pb-6' : 'flex-1 overflow-y-auto px-4 pb-24'}`}>
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-pulse text-gray-400 text-sm">Loading suggestions...</div>
