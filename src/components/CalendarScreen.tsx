@@ -83,6 +83,7 @@ export function CalendarScreen() {
   const [loading, setLoading] = useState(true);
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
   const [calendarAdding, setCalendarAdding] = useState<string | null>(null); // event id being added
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set()); // events user added to calendar this session
 
   const { dates, label: weekLabel } = getWeekDates(weekOffset);
 
@@ -171,26 +172,14 @@ export function CalendarScreen() {
         }),
       });
       if (res.ok) {
-        // Mark event as accepted in our cache too
-        await fetch('/api/events', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: event.id, status: 'accepted' }),
-        });
-        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, status: 'accepted' } : e));
+        setAddedIds(prev => new Set(prev).add(event.id));
       } else {
         const data = await res.json().catch(() => ({}));
         if (data.error === 'NOT_CONNECTED') {
           // Fall back to calendar template URL
           const calUrl = buildCalendarUrl(event);
           window.open(calUrl, '_blank');
-          // Still mark as accepted
-          await fetch('/api/events', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: event.id, status: 'accepted' }),
-          });
-          setEvents(prev => prev.map(e => e.id === event.id ? { ...e, status: 'accepted' } : e));
+          setAddedIds(prev => new Set(prev).add(event.id));
         }
       }
     } catch (err) {
@@ -319,6 +308,7 @@ export function CalendarScreen() {
                             event={event}
                             isPast={isPast}
                             isWhatsOn={mode === 'whats-on'}
+                            addedToCalendar={addedIds.has(event.id)}
                             onAddToCalendar={addToGoogleCalendar}
                             onAction={handleEventAction}
                             isAdding={calendarAdding === event.id}
@@ -367,6 +357,7 @@ function CalendarEventCard({
   event,
   isPast,
   isWhatsOn,
+  addedToCalendar,
   onAddToCalendar,
   onAction,
   isAdding,
@@ -374,30 +365,31 @@ function CalendarEventCard({
   event: CachedEvent;
   isPast: boolean;
   isWhatsOn: boolean;
+  addedToCalendar: boolean; // client-tracked: user explicitly added this session
   onAddToCalendar: (e: CachedEvent) => void;
   onAction: (id: string, action: 'accepted' | 'dismissed') => void;
   isAdding: boolean;
 }) {
-  const isAccepted = event.status === 'accepted';
-  const isWent = event.status === 'accepted' && isPast;
   const timeLabel = formatTime(event.date_start);
 
-  // Decide what actions to show
+  // Personal events are already on the user's calendar — no "Add" needed.
+  // What's On events need an explicit "Add to calendar" action.
+  // The DB status field is meaningless here (sync sets everything to 'accepted').
   const showWentDidntGo = isPast;
-  const showAddToCalendar = !isPast && isWhatsOn && !isAccepted;
-  const showAcceptedBadge = !isPast && isAccepted;
+  const showAddToCalendar = !isPast && isWhatsOn && !addedToCalendar;
+  const showJustAdded = !isPast && isWhatsOn && addedToCalendar;
 
   return (
     <div className={`mb-1.5 px-3 py-2.5 bg-white rounded-lg border shadow-sm ${
-      isAccepted && !isPast ? 'border-green-200 bg-green-50/50' :
-      isWent ? 'border-green-200 bg-green-50/30' :
+      showJustAdded ? 'border-green-200 bg-green-50/50' :
+      !isWhatsOn ? 'border-blue-100 bg-blue-50/30' : // Personal = already on calendar
       'border-gray-100'
     }`}>
       <div className="flex items-start gap-2.5">
         {/* Time column */}
         <div className="shrink-0 w-12 text-center pt-0.5">
           <span className={`text-xs font-medium ${
-            isAccepted ? 'text-green-600' : 'text-gray-500'
+            !isWhatsOn ? 'text-blue-600' : 'text-gray-500'
           }`}>
             {timeLabel}
           </span>
@@ -407,7 +399,7 @@ function CalendarEventCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <h3 className="text-sm font-semibold text-gray-900 truncate">{event.title}</h3>
-            {showAcceptedBadge && (
+            {showJustAdded && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-600 font-medium shrink-0">
                 ✓ Added
               </span>
@@ -420,7 +412,7 @@ function CalendarEventCard({
             <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{event.reason}</p>
           )}
           <div className="flex items-center gap-1.5 mt-1">
-            {event.tags?.filter(t => !t.startsWith('cal:') && t !== 'gcal' && t !== 'personal').slice(0, 3).map(tag => (
+            {event.tags?.filter(t => !t.startsWith('cal:') && t !== 'gcal' && t !== 'personal' && t !== 'all-day').slice(0, 3).map(tag => (
               <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{tag}</span>
             ))}
             {event.price && (
@@ -435,21 +427,13 @@ function CalendarEventCard({
         <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100">
           <button
             onClick={() => onAction(event.id, 'accepted')}
-            className={`flex-1 py-1 rounded-md text-[11px] font-medium transition-colors ${
-              event.status === 'accepted'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-gray-50 text-gray-600 active:bg-gray-100'
-            }`}
+            className="flex-1 py-1 rounded-md text-[11px] font-medium bg-gray-50 text-gray-600 active:bg-green-100 active:text-green-700"
           >
-            {event.status === 'accepted' ? '✓ Went' : 'Went'}
+            Went
           </button>
           <button
             onClick={() => onAction(event.id, 'dismissed')}
-            className={`flex-1 py-1 rounded-md text-[11px] font-medium transition-colors ${
-              event.status === 'dismissed'
-                ? 'bg-red-50 text-red-600'
-                : 'bg-gray-50 text-gray-600 active:bg-gray-100'
-            }`}
+            className="flex-1 py-1 rounded-md text-[11px] font-medium bg-gray-50 text-gray-600 active:bg-gray-100"
           >
             Didn&apos;t go
           </button>

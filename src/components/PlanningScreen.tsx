@@ -930,8 +930,9 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
       if (event) {
         // Skip re-adding events that were sourced from gcal itself — they're
         // already on the calendar. Stable IDs from calendar-sync are prefixed
-        // with "gcal-".
-        const alreadyOnCalendar = event.id.startsWith('gcal-');
+        // Personal events (no cal: tag) are already on the user's calendar.
+        // What's On events (cal: tag) need to be added.
+        const alreadyOnCalendar = !Array.isArray(event.tags) || !event.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
 
         // Build URL fallback once (used on not_connected / error paths).
         const buildEventUrl = () => {
@@ -1259,10 +1260,11 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
               const dayEvents = activeEvents.filter(e => {
                 const eventDate = new Date(e.date_start).toISOString().split('T')[0];
                 if (eventDate !== dateKey) return false;
-                // Only dedup gcal-sourced events (ids starting with 'gcal-')
-                // against accepted suggestions — scraped London events can
-                // legitimately share a title with a place suggestion.
-                if (e.id.startsWith('gcal-') && acceptedTitlesToday.has(norm(e.title))) {
+                // Only dedup personal calendar events (no cal: tag) against
+                // accepted suggestions — What's On events can legitimately
+                // share a title with a place suggestion.
+                const isPersonal = !Array.isArray(e.tags) || !e.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
+                if (isPersonal && acceptedTitlesToday.has(norm(e.title))) {
                   return false;
                 }
                 return true;
@@ -1412,7 +1414,8 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
               // With 0 events the day is "wide open" → up to 3 per bucket.
               // Each gcal event reduces capacity. 4+ events = very full day,
               // show only 1 per free bucket (enough to catch something nearby).
-              const gcalEventCount = dayEvents.filter(e => e.id.startsWith('gcal-')).length;
+              // Only count personal calendar events (no cal: tag) for capacity awareness
+              const gcalEventCount = dayEvents.filter(e => !Array.isArray(e.tags) || !e.tags.some(t => typeof t === 'string' && t.startsWith('cal:'))).length;
               const maxPerBucket = gcalEventCount === 0 ? 3
                 : gcalEventCount <= 2 ? 2
                 : 1; // 3+ calendar events → show at most 1 suggestion per bucket
@@ -1852,7 +1855,9 @@ function EventCard({ event, onAction }: {
 }) {
   const emoji = event.category ? (CATEGORY_EMOJI[event.category] || CATEGORY_EMOJI[event.category.toLowerCase()] || '📅') : '📅';
   const isClosingSoon = event.closing_date && new Date(event.closing_date) <= new Date(Date.now() + 7 * 86400000);
-  const isFromCalendar = event.id.startsWith('gcal-');
+  // Personal events (no cal: tag) are already on the user's calendar.
+  // What's On events (has cal: tag) are discovery items that can be added.
+  const isFromCalendar = !Array.isArray(event.tags) || !event.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
   const isAccepted = event.status === 'accepted';
 
   return (
@@ -1884,7 +1889,7 @@ function EventCard({ event, onAction }: {
                 Closing soon
               </span>
             )}
-            {event.tags?.filter(t => t !== 'gcal' && t !== 'personal').slice(0, 3).map(tag => (
+            {event.tags?.filter(t => t !== 'gcal' && t !== 'personal' && t !== 'all-day' && !t.startsWith('cal:')).slice(0, 3).map(tag => (
               <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{tag}</span>
             ))}
           </div>
