@@ -79,7 +79,7 @@ function BriefBlock({ block: rawBlock }: { block: Block }) {
       const text = getText(block.data);
       return (
         <div className="flex items-center gap-2 pt-1 pb-0.5">
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
             {text}
           </p>
           <div className="flex-1 h-px bg-gray-200" />
@@ -222,7 +222,7 @@ export function BriefScreen() {
             ) : articleBlocks.length > 0 ? (
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2 pb-0.5">
-                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     Today&apos;s Reads
                   </p>
                   <div className="flex-1 h-px bg-gray-200" />

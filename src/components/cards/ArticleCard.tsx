@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 // Extract the real destination URL from a click-tracker redirect
 function extractDomain(url: string): string {
   try {
-    // Check if it's a redirect URL with a ?url= param
     const u = new URL(url);
     const inner = u.searchParams.get('url');
     if (inner) {
@@ -23,12 +22,10 @@ function getFaviconUrl(url: string): string {
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
 }
 
-// Generate a colour from the topic string for the accent bar
 function topicColor(topic: string): string {
   const colors: Record<string, string> = {
     'tech-ai': '#6366f1',
-    'tech': '#3b82f6',
-    'culture': '#ec4899',
+    'tech': '#3b82f6',    'culture': '#ec4899',
     'food': '#f59e0b',
     'travel': '#10b981',
     'science': '#06b6d4',
@@ -43,10 +40,20 @@ function topicColor(topic: string): string {
   return key ? colors[key] : '#94a3b8';
 }
 
+// Simple hash to generate a stable ID from a URL
+function hashId(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return `saved-article-${Math.abs(hash).toString(36)}`;
+}
+
 export function ArticleCard({ data }: { data: Record<string, unknown> }) {
   const [reaction, setReaction] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [faviconError, setFaviconError] = useState(false);
-
   const title = String(data.title || '');
   const source = String(data.source || '');
   const topic = String(data.topic || '');
@@ -58,6 +65,56 @@ export function ArticleCard({ data }: { data: Record<string, unknown> }) {
 
   const favicon = getFaviconUrl(url);
   const accent = topicColor(topic);
+  const itemId = hashId(url);
+
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (saved) {
+        // Unsave
+        const res = await fetch(`/api/saved/${itemId}`, { method: 'DELETE' });
+        if (res.ok) setSaved(false);
+      } else {
+        // Save
+        const res = await fetch('/api/saved', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: itemId,
+            title,            url,
+            category: topic,
+            tags: [source, isDiscovery ? 'discovery' : null, topicEmoji].filter(Boolean),
+            reason: summary,
+            source_task_id: 'smart-reading-digest',
+          }),
+        });
+        if (res.ok || res.status === 201) setSaved(true);
+      }
+    } catch (err) {
+      console.error('Save/unsave failed:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReaction = async (type: 'up' | 'down') => {
+    const newReaction = reaction === type ? null : type;
+    setReaction(newReaction);
+    // Fire-and-forget feedback to profile evidence
+    try {
+      await fetch('/api/profile/evidence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_id: 'smart-reading-digest',
+          type: 'article_feedback',
+          detail: `${type === 'up' ? 'Liked' : 'Disliked'}: "${title}" (${source}, ${topic})`,
+        }),
+      });    } catch {
+      // non-critical
+    }
+  };
 
   return (
     <div className={`rounded-xl shadow-sm border overflow-hidden ${
@@ -82,8 +139,7 @@ export function ArticleCard({ data }: { data: Record<string, unknown> }) {
           <span className="text-[11px] font-medium text-gray-600">{source}</span>
           <div className="flex items-center gap-1.5 ml-auto text-[11px] text-gray-400">
             {isDiscovery && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">
-                Discovery
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">                Discovery
               </span>
             )}
             <span>{topicEmoji} {topic}</span>
@@ -105,13 +161,12 @@ export function ArticleCard({ data }: { data: Record<string, unknown> }) {
           </h3>
         </a>
 
-        {/* Summary — show full text */}
+        {/* Summary */}
         {summary && (
           <p className="text-[12px] text-gray-500 mt-1.5 leading-relaxed">
             {summary}
           </p>
         )}
-
         {/* Actions */}
         <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-gray-100">
           <a
@@ -124,29 +179,29 @@ export function ArticleCard({ data }: { data: Record<string, unknown> }) {
             Read
           </a>
           <button
-            onClick={() => setReaction('saved')}
-            title={reaction === 'saved' ? 'Saved to your reading list' : 'Save for later'}
-            className={`px-3 py-1 text-[11px] font-medium rounded-md transition-colors ${
-              reaction === 'saved'
+            onClick={handleSave}
+            disabled={saving}
+            title={saved ? 'Remove from saved items' : 'Save for later'}
+            className={`px-3 py-1 text-[11px] font-medium rounded-md transition-colors disabled:opacity-50 ${
+              saved
                 ? 'border border-blue-200 bg-blue-50 text-blue-600'
                 : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
             }`}
           >
-            Save
+            {saved ? 'Saved' : 'Save'}
           </button>
           <div className="flex items-center gap-1 ml-auto">
             <button
-              onClick={() => setReaction('up')}
-              title="More like this"
-              className={`w-7 h-7 flex items-center justify-center text-[13px] rounded-md transition-colors ${
-                reaction === 'up' ? 'bg-green-50 border border-green-200' : 'border border-gray-200 hover:bg-gray-50'
+              onClick={() => handleReaction('up')}
+              title="More like this — improves future recommendations"
+              className={`w-7 h-7 flex items-center justify-center text-[13px] rounded-md transition-colors ${                reaction === 'up' ? 'bg-green-50 border border-green-200' : 'border border-gray-200 hover:bg-gray-50'
               }`}
             >
               &#x1F44D;
             </button>
             <button
-              onClick={() => setReaction('down')}
-              title="Less like this"
+              onClick={() => handleReaction('down')}
+              title="Less like this — improves future recommendations"
               className={`w-7 h-7 flex items-center justify-center text-[13px] rounded-md transition-colors ${
                 reaction === 'down' ? 'bg-red-50 border border-red-200' : 'border border-gray-200 hover:bg-gray-50'
               }`}

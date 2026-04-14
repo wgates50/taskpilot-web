@@ -202,7 +202,7 @@ export function ProfileScreen() {
 function SectionHeader({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 mt-5 mb-2">
-      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
         {label}
       </p>
       <div className="flex-1 h-px bg-gray-200" />
@@ -307,7 +307,7 @@ function TaskDetailView({ task, onBack }: { task: TaskMeta; onBack: () => void }
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-white border border-gray-100 rounded-xl px-3.5 py-2.5 shadow-sm">
-      <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">{label}</p>
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</p>
       <p className="text-[13px] text-gray-800 mt-0.5">{value}</p>
     </div>
   );
