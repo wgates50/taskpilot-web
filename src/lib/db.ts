@@ -889,4 +889,90 @@ export async function setupDatabase(): Promise<void> {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_visit_reviews_week ON visit_reviews(review_week)`;
+
+  // ── Brief Impressions (rotation tracking) ──────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS brief_impressions (
+      id SERIAL PRIMARY KEY,
+      item_id TEXT NOT NULL,
+      item_type TEXT NOT NULL,
+      title TEXT,
+      url TEXT,
+      first_shown_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_shown_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      show_count INTEGER NOT NULL DEFAULT 1,
+      UNIQUE (item_id, item_type)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_brief_impressions_type_last ON brief_impressions(item_type, last_shown_at DESC)`;
+}
+
+// ── Brief Impressions helpers ────────────────────────────
+
+export interface BriefImpressionRow {
+  id: number;
+  item_id: string;
+  item_type: string;
+  title: string | null;
+  url: string | null;
+  first_shown_at: string;
+  last_shown_at: string;
+  show_count: number;
+}
+
+/**
+ * Fetch all impressions for a given item_type. The morning brief / reading
+ * digest tasks use this to decide which items to suppress.
+ *
+ * Suppression rules (applied by the caller):
+ *   - show_count >= maxShows → suppressed forever (until manual reset)
+ *   - last_shown_at within cooldownDays → suppressed
+ */
+export async function getBriefImpressions(
+  itemType: string
+): Promise<BriefImpressionRow[]> {
+  const result = await sql`
+    SELECT * FROM brief_impressions WHERE item_type = ${itemType}
+    ORDER BY last_shown_at DESC
+  `;
+  return result.rows as BriefImpressionRow[];
+}
+
+/**
+ * Record that one or more items were shown in today's brief. Increments
+ * show_count and bumps last_shown_at on conflict.
+ */
+export async function recordBriefImpressions(
+  itemType: string,
+  items: Array<{ id: string; title?: string; url?: string }>
+): Promise<number> {
+  let inserted = 0;
+  for (const item of items) {
+    await sql`
+      INSERT INTO brief_impressions (item_id, item_type, title, url)
+      VALUES (${item.id}, ${itemType}, ${item.title || null}, ${item.url || null})
+      ON CONFLICT (item_id, item_type)
+      DO UPDATE SET
+        last_shown_at = NOW(),
+        show_count = brief_impressions.show_count + 1,
+        title = COALESCE(EXCLUDED.title, brief_impressions.title),
+        url = COALESCE(EXCLUDED.url, brief_impressions.url)
+    `;
+    inserted++;
+  }
+  return inserted;
+}
+
+/**
+ * Reset an impression (used when the user explicitly asks to see
+ * something again, or via admin clear).
+ */
+export async function resetBriefImpression(
+  itemId: string,
+  itemType: string
+): Promise<void> {
+  await sql`
+    DELETE FROM brief_impressions
+    WHERE item_id = ${itemId} AND item_type = ${itemType}
+  `;
 }

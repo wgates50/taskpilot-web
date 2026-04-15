@@ -186,3 +186,24 @@ CREATE TABLE IF NOT EXISTS visit_reviews (
 );
 
 CREATE INDEX IF NOT EXISTS idx_visit_reviews_week ON visit_reviews(review_week);
+
+-- ── Brief Impressions (rotation tracking) ────────────────
+-- Tracks which items (What's On events, articles) have appeared in morning
+-- briefs / reading digests, so we can suppress repeats.
+--   show_count >= N → suppress forever (caller picks N, typically 3)
+--   last_shown_at within cooldown window → suppress (caller picks days)
+
+CREATE TABLE IF NOT EXISTS brief_impressions (
+  id SERIAL PRIMARY KEY,
+  item_id TEXT NOT NULL,
+  item_type TEXT NOT NULL,          -- 'whats-on' | 'article'
+  title TEXT,
+  url TEXT,
+  first_shown_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_shown_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  show_count INTEGER NOT NULL DEFAULT 1,
+  UNIQUE (item_id, item_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_brief_impressions_type_last
+  ON brief_impressions(item_type, last_shown_at DESC);
