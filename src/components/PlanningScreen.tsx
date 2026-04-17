@@ -623,6 +623,10 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
   const [gpsStatus, setGpsStatus] = useState<'waiting' | 'active' | 'denied'>('waiting');
   const [calendarAdding, setCalendarAdding] = useState<string | null>(null);
   const [dismissedBonusKeys, setDismissedBonusKeys] = useState<Set<string>>(new Set());
+  // Past days collapse to a one-line summary by default. Clicking the row
+  // expands it (useful for back-filling "didn't go" flags); clicking the day
+  // header of an expanded past day collapses it again.
+  const [expandedPastDays, setExpandedPastDays] = useState<Set<string>>(new Set());
   // Full 290-place DB, fetched once per mount — used for bonus-pick lookups
   // when an accepted suggestion anchors a day to a specific location.
   const [allPlaces, setAllPlaces] = useState<PlaceRecord[]>([]);
@@ -1305,8 +1309,13 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
               // user to a spot, used for "you'll already be around here" bonus
               // picks. Two sources:
               //   (1) accepted suggestions with lat/lng
-              //   (2) gcal-synced events with lat/lng (flea markets, concerts,
-              //       dinners, etc — anything calendar-sync has geocoded)
+              //   (2) personal-calendar events with lat/lng (flea markets,
+              //       concerts, dinners, etc — anything calendar-sync has
+              //       geocoded).
+              // NB: What's On events (tagged "cal:*" — newsletters, ticket
+              // blasts, etc) are excluded here. They represent things in the
+              // world, not places the user will actually be, so anchoring
+              // bonus picks to them produces ghost-location suggestions.
               const suggestionAnchors: DayAnchor[] = daySuggestions
                 .filter(s => s.status === 'accepted' && s.lat != null && s.lng != null)
                 .map(s => ({
@@ -1321,7 +1330,12 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                 }));
 
               const eventAnchors: DayAnchor[] = dayEvents
-                .filter(e => e.lat != null && e.lng != null && e.status !== 'dismissed')
+                .filter(e =>
+                  e.lat != null &&
+                  e.lng != null &&
+                  e.status !== 'dismissed' &&
+                  (!Array.isArray(e.tags) || !e.tags.some(t => typeof t === 'string' && t.startsWith('cal:')))
+                )
                 .map(e => {
                   // Derive a suggested_for bucket from the event's start time.
                   // All-day events (no time or midnight) map to 'afternoon' so
@@ -1419,6 +1433,39 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                 );
               }
 
+              // Past day (non-empty) — collapsed one-line summary by default.
+              // Click to expand and see the full breakdown (and back-fill
+              // "didn't go" on any accepted suggestions).
+              if (isPast && !expandedPastDays.has(dateKey)) {
+                const acceptedCount = daySuggestions.filter(s => s.status === 'accepted').length;
+                const eventCount = dayEvents.length;
+                const pickCount = daySuggestions.length;
+                return (
+                  <div
+                    key={dateKey}
+                    onClick={() => setExpandedPastDays(prev => {
+                      const next = new Set(prev);
+                      next.add(dateKey);
+                      return next;
+                    })}
+                    className="mt-2 flex items-baseline gap-2 px-1 py-1 border-l-2 opacity-40 border-gray-200 cursor-pointer hover:opacity-70 transition-opacity"
+                    title="Click to expand"
+                  >
+                    <span className="text-[10px] text-gray-400">▸</span>
+                    <h2 className="text-xs font-semibold text-gray-600">
+                      {getDayLabel(date)}
+                    </h2>
+                    <span className="text-[10px] text-gray-400">{weekdayShort} {dayNumber}</span>
+                    <span className="text-[10px] text-gray-400 ml-auto">
+                      {eventCount > 0 && `${eventCount} event${eventCount !== 1 ? 's' : ''}`}
+                      {eventCount > 0 && pickCount > 0 && ' · '}
+                      {pickCount > 0 && `${pickCount} pick${pickCount !== 1 ? 's' : ''}`}
+                      {acceptedCount > 0 && ` (${acceptedCount} accepted)`}
+                    </span>
+                  </div>
+                );
+              }
+
               // Find nearest anchor (within 1.5km) for a suggestion — returns
               // the anchor + distance so the card can badge it and we can re-sort.
               const findNearbyAnchor = (
@@ -1473,10 +1520,19 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
 
               return (
                 <div key={dateKey} className={`mt-3 lg:mt-0 lg:mb-4 ${isPast ? 'opacity-60' : ''}`}>
-                  {/* Day header */}
-                  <div className={`flex items-baseline gap-2 mb-1.5 pl-1 border-l-2 ${
-                    isToday ? 'border-blue-500' : 'border-gray-300'
-                  }`}>
+                  {/* Day header — clickable on past days to re-collapse */}
+                  <div
+                    onClick={isPast ? () => setExpandedPastDays(prev => {
+                      const next = new Set(prev);
+                      next.delete(dateKey);
+                      return next;
+                    }) : undefined}
+                    className={`flex items-baseline gap-2 mb-1.5 pl-1 border-l-2 ${
+                      isToday ? 'border-blue-500' : 'border-gray-300'
+                    } ${isPast ? 'cursor-pointer hover:opacity-80' : ''}`}
+                    title={isPast ? 'Click to collapse' : undefined}
+                  >
+                    {isPast && <span className="text-[10px] text-gray-400">▾</span>}
                     <h2 className={`text-base font-bold ${isToday ? 'text-blue-600' : 'text-gray-900'}`}>
                       {getDayLabel(date)}
                     </h2>
