@@ -132,6 +132,9 @@ CREATE TABLE IF NOT EXISTS suggestions (
 
 CREATE INDEX IF NOT EXISTS idx_suggestions_date ON suggestions(suggestion_date);
 CREATE INDEX IF NOT EXISTS idx_suggestions_status ON suggestions(status);
+-- One suggestion row per (place, date). Earlier versions allowed duplicates,
+-- which surfaced in the Planner as the same place showing up twice.
+CREATE UNIQUE INDEX IF NOT EXISTS suggestions_place_date_key ON suggestions (place_id, suggestion_date);
 
 -- ── Activity Engine: Events Cache ────────────────────────
 

@@ -506,13 +506,22 @@ export async function insertSuggestion(s: {
   suggested_for?: string;
   score: number;
   scoring_reasons?: unknown;
-}): Promise<SuggestionRow> {
+}): Promise<SuggestionRow | null> {
+  // ON CONFLICT (place_id, suggestion_date) — one suggestion per place per day.
+  // If a higher-score run produces the same pair later, the UPDATE bumps the score.
   const result = await sql`
     INSERT INTO suggestions (place_id, suggestion_date, suggested_for, score, scoring_reasons)
     VALUES (${s.place_id}, ${s.suggestion_date}, ${s.suggested_for || null}, ${s.score}, ${s.scoring_reasons ? JSON.stringify(s.scoring_reasons) : '{}'})
+    ON CONFLICT (place_id, suggestion_date) DO UPDATE SET
+      suggested_for = COALESCE(EXCLUDED.suggested_for, suggestions.suggested_for),
+      score = GREATEST(EXCLUDED.score, suggestions.score),
+      scoring_reasons = CASE
+        WHEN EXCLUDED.score > suggestions.score THEN EXCLUDED.scoring_reasons
+        ELSE suggestions.scoring_reasons
+      END
     RETURNING *
   `;
-  return result.rows[0] as SuggestionRow;
+  return (result.rows[0] as SuggestionRow) || null;
 }
 
 export async function getSuggestions(date: string, status?: string): Promise<(SuggestionRow & PlaceRow)[]> {

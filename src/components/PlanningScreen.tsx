@@ -637,6 +637,9 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
   const [gpsStatus, setGpsStatus] = useState<'waiting' | 'active' | 'denied'>('waiting');
   const [calendarAdding, setCalendarAdding] = useState<string | null>(null);
   const [dismissedBonusKeys, setDismissedBonusKeys] = useState<Set<string>>(new Set());
+  // Place IDs the user has dismissed somewhere in the visible window.
+  // Used to stop those places from reappearing via "Suggest Now" or bonus picks.
+  const [dismissedPlaceIds, setDismissedPlaceIds] = useState<Set<string>>(new Set());
   // Past days collapse to a one-line summary by default. Clicking the row
   // expands it (useful for back-filling "didn't go" flags); clicking the day
   // header of an expanded past day collapses it again.
@@ -778,16 +781,22 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
       }
 
       const suggMap: Record<string, Suggestion[]> = {};
+      const dismissed = new Set<string>();
       for (let i = 0; i < dates.length; i++) {
         const dateKey = formatDate(dates[i]);
         if (dayResults[i].ok) {
           const data = await dayResults[i].json();
-          suggMap[dateKey] = (data.suggestions || []).filter((s: Suggestion) => s.status !== 'dismissed');
+          const all = (data.suggestions || []) as Suggestion[];
+          for (const s of all) {
+            if (s.status === 'dismissed' && s.place_id) dismissed.add(s.place_id);
+          }
+          suggMap[dateKey] = all.filter(s => s.status !== 'dismissed');
         } else {
           suggMap[dateKey] = [];
         }
       }
       setSuggestions(suggMap);
+      setDismissedPlaceIds(dismissed);
     } catch (err) {
       console.error('Failed to fetch planning data:', err);
     } finally {
@@ -847,8 +856,11 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      // Score every place
-      const scored = places.map(p => {
+      // Score every place — but exclude anything the user has dismissed
+      // in the visible window. Without this, dismissed items bounce right
+      // back when the user clicks "Suggest Now".
+      const candidates = places.filter(p => !dismissedPlaceIds.has(p.id));
+      const scored = candidates.map(p => {
         const { score, reasons } = scorePlace(p, freshWeather, timeSlot, currentSeason, companionMode, lat, lng);
         return { place: p, score, reasons };
       });
@@ -1126,7 +1138,42 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
   };
 
   const pendingReviews = reviews.filter(r => r.status === 'pending');
-  const activeEvents = events.filter(e => e.status !== 'dismissed');
+  // Dedupe events that appear in multiple calendars (e.g. the same gig lives
+  // in both the primary calendar AND the London What's On calendar, yielding
+  // two distinct gcal-<id> rows with the same title+date). Normalize the
+  // title (strip emoji, punctuation, collapse whitespace, lowercase), key by
+  // (dateDay, normTitle), and prefer the entry whose tags do NOT include a
+  // "cal:*" source tag — that's the user's own calendar copy.
+  const normTitle = (t: string) =>
+    (t || '')
+      .replace(/[\p{Extended_Pictographic}\u200d]+/gu, ' ')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  const dedupedEvents: CachedEvent[] = (() => {
+    const byKey = new Map<string, CachedEvent>();
+    for (const e of events.filter(x => x.status !== 'dismissed')) {
+      const day = (e.date_start || '').slice(0, 10);
+      const key = `${day}::${normTitle(e.title)}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, e);
+        continue;
+      }
+      // Prefer the one WITHOUT a cal:* source tag — that's the primary cal copy.
+      const hasCalTag = (ev: CachedEvent) =>
+        Array.isArray(ev.tags) && ev.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
+      if (hasCalTag(existing) && !hasCalTag(e)) byKey.set(key, e);
+      // Else prefer the one with an explicit time over an all-day entry
+      else if (hasCalTag(existing) === hasCalTag(e)) {
+        const isAllDay = (ev: CachedEvent) => /^\d{4}-\d{2}-\d{2}$/.test(ev.date_start || '');
+        if (isAllDay(existing) && !isAllDay(e)) byKey.set(key, e);
+      }
+    }
+    return Array.from(byKey.values());
+  })();
+  const activeEvents = dedupedEvents;
 
   // ── Render ─────────────────────────────────────────────
 
@@ -1398,16 +1445,40 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
               // under the anchor they relate to (so users can tell at a glance
               // which suggestion/event each bonus pick is anchored to).
               type BonusPick = { place: PlaceRecord; anchor: DayAnchor; km: number };
+              const FOOD_CATS = new Set(['restaurant', 'bar', 'cafe', 'bakery']);
               const usedPlaceIds = new Set(daySuggestions.map(s => s.place_id));
               const bonusPicksByAnchor: Record<string, BonusPick[]> = {};
               for (const anchor of dayAnchors) {
+                // Resolve the anchor's effective category.
+                //   - suggestion anchor → use its category directly
+                //   - event anchor → match by venue coords (within 50m) to a
+                //     known place; if no match, sniff food/drink keywords from
+                //     the event title so we don't suggest restaurants next to
+                //     someone's dinner reservation.
+                let anchorCat: string | null = null;
+                if (anchor.source === 'suggestion') {
+                  anchorCat = anchor.category || null;
+                } else {
+                  const match = allPlaces.find(p =>
+                    p.lat != null && p.lng != null &&
+                    haversineKm(p.lat, p.lng, anchor.lat, anchor.lng) < 0.05
+                  );
+                  if (match) {
+                    anchorCat = match.category || null;
+                  } else if (/\brestaurant|dinner|lunch|brunch|breakfast|bar\b|\bpub\b|café|cafe|coffee|bakery|pizza|ramen|sushi|🍽|🍳|🍕|🍸|🍜|🥢|🍷/i.test(anchor.name)) {
+                    anchorCat = 'restaurant'; // generic food/drink sentinel
+                  }
+                }
+                const anchorIsFood = !!(anchorCat && FOOD_CATS.has(anchorCat));
                 const nearby = allPlaces
                   .filter(p =>
                     p.lat != null && p.lng != null &&
                     p.id !== anchor.place_id &&
                     !usedPlaceIds.has(p.id) &&
                     !dismissedBonusKeys.has(`${dateKey}::${p.id}`) &&
-                    p.category !== anchor.category &&
+                    !dismissedPlaceIds.has(p.id) &&
+                    (!anchorCat || p.category !== anchorCat) &&
+                    !(anchorIsFood && FOOD_CATS.has(p.category)) &&
                     haversineKm(p.lat, p.lng, anchor.lat, anchor.lng) < 0.6
                   )
                   .map(p => ({
