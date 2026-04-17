@@ -271,20 +271,6 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Returns true if working week mode should suppress suggestions for this date.
-// Suppresses today only, and only before 17:00 on Mon–Fri.
-// Future weekdays always show (you're planning ahead).
-function isWorkingHoursSuppressed(date: Date): boolean {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const dateNormalised = new Date(date);
-  dateNormalised.setHours(0, 0, 0, 0);
-  if (dateNormalised.getTime() !== today.getTime()) return false; // not today
-  const dow = today.getDay(); // 0=Sun, 6=Sat
-  if (dow === 0 || dow === 6) return false; // weekend
-  return new Date().getHours() < 17;
-}
-
 function getTimeSlot(): 'morning' | 'lunch' | 'afternoon' | 'evening' | 'late' {
   const h = new Date().getHours();
   if (h < 11) return 'morning';
@@ -292,6 +278,34 @@ function getTimeSlot(): 'morning' | 'lunch' | 'afternoon' | 'evening' | 'late' {
   if (h < 17) return 'afternoon';
   if (h < 21) return 'evening';
   return 'late';
+}
+
+// Event time helpers — personal-calendar events often render without a time
+// unless we format it out of date_start explicitly.
+function isEventAllDay(event: CachedEvent): boolean {
+  const d = new Date(event.date_start);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return /^\d{4}-\d{2}-\d{2}$/.test(event.date_start) ||
+    (Array.isArray(event.tags) && event.tags.includes('all-day')) ||
+    (h === 0 && m === 0);
+}
+
+function formatEventTime(event: CachedEvent): string {
+  if (isEventAllDay(event)) return 'All day';
+  const d = new Date(event.date_start);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// Map a timed event into the same morning/afternoon/evening buckets used for
+// suggestions. All-day events return null so the caller can render them at
+// day level rather than inside a bucket.
+function bucketForEventTime(event: CachedEvent): 'morning' | 'afternoon' | 'evening' | null {
+  if (isEventAllDay(event)) return null;
+  const h = new Date(event.date_start).getHours();
+  return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
 }
 
 function getSeason(): string {
@@ -1231,7 +1245,7 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                       ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
                       : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
                   }`}
-                  title={context.working_week_mode ? 'Work mode ON — hides suggestions until 5pm on weekdays' : 'Enable work mode — hides suggestions until 5pm on weekdays'}
+                  title={context.working_week_mode ? 'Work mode ON — hides 8am–5pm slots on weekdays (you\u2019re at work)' : 'Enable work mode — only show after-5pm picks on weekdays'}
                 >
                   <span>{context.working_week_mode ? '💼' : '💼'}</span>
                   <span>Work mode</span>
@@ -1273,9 +1287,25 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
             <div className="mt-2 lg:grid lg:grid-cols-2 lg:gap-x-4 xl:grid-cols-3">
             {dates.map(date => {
               const dateKey = formatDate(date);
-              // Working week mode: suppress today's suggestions before 5pm on weekdays
-              const workingSuppressed = context.working_week_mode && isWorkingHoursSuppressed(date);
-              const daySuggestions = workingSuppressed ? [] : (suggestions[dateKey] || []);
+              // Which morning/afternoon/evening buckets should render for this day.
+              // We hide buckets that are in the past (on today) or blocked by
+              // work mode (weekdays 8am-5pm). The user still sees the day,
+              // just without times they can't use.
+              const hiddenBuckets = new Set<string>();
+              const nowHour = new Date().getHours();
+              const dow = date.getDay();
+              const isWeekday = dow !== 0 && dow !== 6;
+              if (dateKey === formatDate(new Date())) {
+                if (nowHour >= 12) hiddenBuckets.add('morning');
+                if (nowHour >= 17) hiddenBuckets.add('afternoon');
+              }
+              if (context.working_week_mode && isWeekday) {
+                hiddenBuckets.add('morning');
+                hiddenBuckets.add('afternoon');
+              }
+              const daySuggestions = (suggestions[dateKey] || []).filter(
+                s => !hiddenBuckets.has(bucketFor(s.suggested_for)),
+              );
               // Dedup — when the user adds an accepted suggestion to Google
               // Calendar via Option A, the next calendar-sync run pulls it
               // back as a gcal-categorised event. We'd then render BOTH rows
@@ -1396,22 +1426,6 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                   (bonusPicksByBucket[anchorBucket] ||= []).push(n);
                   usedPlaceIds.add(n.place.id); // don't re-suggest same place via another anchor
                 }
-              }
-
-              // Working week suppression banner (today, weekday, before 5pm)
-              if (workingSuppressed) {
-                return (
-                  <div
-                    key={dateKey}
-                    className="mt-2 px-3 py-2.5 bg-indigo-50/60 rounded-lg border border-indigo-100 border-l-2 border-l-indigo-400"
-                  >
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <h2 className="text-xs font-semibold text-indigo-600">{getDayLabel(date)}</h2>
-                      <span className="text-[10px] text-gray-400">{weekdayShort} {dayNumber}</span>
-                    </div>
-                    <p className="text-[11px] text-indigo-500">Suggestions unlock after 5pm — enjoy your workday.</p>
-                  </div>
-                );
               }
 
               // Empty day — single-line tight row
@@ -1544,29 +1558,50 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                     </span>
                   </div>
 
-                  {/* Split events: personal stay at day level, What's On merge into buckets */}
+                  {/* Split events:
+                      - All-day personal events stay at day level (no clean bucket).
+                      - Timed personal events merge into buckets alongside What's On,
+                        so "Sofar Sounds 18:30" lands in Evening right next to its
+                        nearby bonus picks.
+                      - Events whose bucket is hidden (past today, or work-hours
+                        on a weekday in work mode) are filtered out. */}
                   {(() => {
-                    const personalEvents = dayEvents.filter(e =>
-                      !Array.isArray(e.tags) || !e.tags.some(t => typeof t === 'string' && t.startsWith('cal:'))
-                    );
-                    const whatsOnEvents = dayEvents.filter(e =>
-                      Array.isArray(e.tags) && e.tags.some(t => typeof t === 'string' && t.startsWith('cal:'))
-                    );
-                    // Bucket What's On events by category/title
+                    const isWhatsOnEvent = (e: CachedEvent) =>
+                      Array.isArray(e.tags) && e.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
+                    const allDayPersonal: CachedEvent[] = [];
                     const eventsByBucket: Record<string, CachedEvent[]> = {};
-                    for (const ev of whatsOnEvents) {
-                      const b = bucketForEvent(ev);
-                      (eventsByBucket[b] ||= []).push(ev);
+                    for (const ev of dayEvents) {
+                      if (isWhatsOnEvent(ev)) {
+                        const b = bucketForEvent(ev);
+                        if (hiddenBuckets.has(b)) continue;
+                        (eventsByBucket[b] ||= []).push(ev);
+                      } else {
+                        // Personal calendar event
+                        const b = bucketForEventTime(ev);
+                        if (b === null) {
+                          allDayPersonal.push(ev);
+                        } else {
+                          if (hiddenBuckets.has(b)) continue;
+                          (eventsByBucket[b] ||= []).push(ev);
+                        }
+                      }
+                    }
+                    // Sort each bucket's events by time so 16:00 renders before 19:30
+                    for (const k of Object.keys(eventsByBucket)) {
+                      eventsByBucket[k].sort((a, b) =>
+                        new Date(a.date_start).getTime() - new Date(b.date_start).getTime()
+                      );
                     }
                     return (
                       <>
-                        {/* Personal calendar events at day level */}
-                        {personalEvents.map(event => (
+                        {/* All-day personal events at day level */}
+                        {allDayPersonal.map(event => (
                           <EventCard key={event.id} event={event} onAction={handleEventAction} />
                         ))}
 
-                        {/* Time-of-day sections — suggestions + What's On merged */}
+                        {/* Time-of-day sections — suggestions + events merged */}
                         {TIME_BUCKETS.map(bucket => {
+                          if (hiddenBuckets.has(bucket.key)) return null;
                           const picks = byBucket[bucket.key] || [];
                           const bonusPicks = bonusPicksByBucket[bucket.key] || [];
                           const bucketEvents = eventsByBucket[bucket.key] || [];
@@ -1990,8 +2025,10 @@ function EventCard({ event, onAction }: {
             )}
           </div>
 
-          {/* Meta line — venue/area, price */}
+          {/* Meta line — time · venue/area · price */}
           <div className="text-[11px] text-gray-600 truncate">
+            <span className="font-medium text-gray-700">{formatEventTime(event)}</span>
+            {(parenDetail || event.venue || event.price || event.category) && <span className="text-gray-400"> · </span>}
             {parenDetail && <span>{parenDetail}</span>}
             {!parenDetail && event.venue && <span>{event.venue}</span>}
             {parenDetail && event.venue && event.venue !== parenDetail && (
