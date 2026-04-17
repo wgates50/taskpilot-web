@@ -1394,12 +1394,13 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
               // when an anchor is set, find up to 2 nearby places (<600m) that
               // are (a) not already in today's suggestions, (b) a different
               // category to the anchor, (c) preferably liked. These become
-              // "Near your [anchor]" bonus cards.
+              // "Near your [anchor]" bonus cards that render INLINE directly
+              // under the anchor they relate to (so users can tell at a glance
+              // which suggestion/event each bonus pick is anchored to).
               type BonusPick = { place: PlaceRecord; anchor: DayAnchor; km: number };
               const usedPlaceIds = new Set(daySuggestions.map(s => s.place_id));
-              const bonusPicksByBucket: Record<string, BonusPick[]> = {};
+              const bonusPicksByAnchor: Record<string, BonusPick[]> = {};
               for (const anchor of dayAnchors) {
-                const anchorBucket = bucketFor(anchor.suggested_for);
                 const nearby = allPlaces
                   .filter(p =>
                     p.lat != null && p.lng != null &&
@@ -1422,11 +1423,24 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                     return a.km - b.km;
                   })
                   .slice(0, 2);
-                for (const n of nearby) {
-                  (bonusPicksByBucket[anchorBucket] ||= []).push(n);
-                  usedPlaceIds.add(n.place.id); // don't re-suggest same place via another anchor
+                if (nearby.length > 0) {
+                  bonusPicksByAnchor[anchor.id] = nearby;
+                  for (const n of nearby) usedPlaceIds.add(n.place.id); // don't re-suggest via another anchor
                 }
               }
+              // Helper: render bonus-pick cards for a given anchor id.
+              const renderBonusPicksFor = (anchorId: string) =>
+                (bonusPicksByAnchor[anchorId] || []).map(bp => (
+                  <BonusPickCard
+                    key={`bonus-${anchorId}-${bp.place.id}`}
+                    place={bp.place}
+                    anchor={bp.anchor}
+                    km={bp.km}
+                    dateKey={dateKey}
+                    onAdd={handleBonusAdd}
+                    onDismiss={handleBonusDismiss}
+                  />
+                ));
 
               // Empty day — single-line tight row
               if (daySuggestions.length === 0 && dayEvents.length === 0) {
@@ -1594,18 +1608,24 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                     }
                     return (
                       <>
-                        {/* All-day personal events at day level */}
+                        {/* All-day personal events at day level — render their
+                            bonus picks immediately below so "near Leadenhall"
+                            lands under Leadenhall, not floating at the bottom. */}
                         {allDayPersonal.map(event => (
-                          <EventCard key={event.id} event={event} onAction={handleEventAction} />
+                          <div key={event.id}>
+                            <EventCard event={event} onAction={handleEventAction} />
+                            {renderBonusPicksFor(event.id)}
+                          </div>
                         ))}
 
-                        {/* Time-of-day sections — suggestions + events merged */}
+                        {/* Time-of-day sections — suggestions + events merged,
+                            with each anchor's bonus picks rendered directly
+                            below the card they belong to. */}
                         {TIME_BUCKETS.map(bucket => {
                           if (hiddenBuckets.has(bucket.key)) return null;
                           const picks = byBucket[bucket.key] || [];
-                          const bonusPicks = bonusPicksByBucket[bucket.key] || [];
                           const bucketEvents = eventsByBucket[bucket.key] || [];
-                          if (picks.length === 0 && bonusPicks.length === 0 && bucketEvents.length === 0) return null;
+                          if (picks.length === 0 && bucketEvents.length === 0) return null;
                           return (
                             <div key={bucket.key} className="mb-2">
                               <div className="flex items-center gap-1.5 mb-1 px-1">
@@ -1616,29 +1636,23 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
                                 <div className="flex-1 h-px bg-gray-200 ml-1" />
                               </div>
                               {picks.map(({ s, nearby }) => (
-                                <SuggestionCard
-                                  key={s.id}
-                                  suggestion={s}
-                                  onAction={handleAction}
-                                  calendarAdding={calendarAdding}
-                                  nearbyAnchor={nearby ? { name: nearby.anchor.name, km: nearby.km } : null}
-                                  isPast={isPast}
-                                  onDidntGo={handleDidntGo}
-                                />
+                                <div key={s.id}>
+                                  <SuggestionCard
+                                    suggestion={s}
+                                    onAction={handleAction}
+                                    calendarAdding={calendarAdding}
+                                    nearbyAnchor={nearby ? { name: nearby.anchor.name, km: nearby.km } : null}
+                                    isPast={isPast}
+                                    onDidntGo={handleDidntGo}
+                                  />
+                                  {s.status === 'accepted' && renderBonusPicksFor(`sug-${s.id}`)}
+                                </div>
                               ))}
                               {bucketEvents.map(event => (
-                                <EventCard key={event.id} event={event} onAction={handleEventAction} />
-                              ))}
-                              {bonusPicks.map(bp => (
-                                <BonusPickCard
-                                  key={`bonus-${bp.place.id}`}
-                                  place={bp.place}
-                                  anchor={bp.anchor}
-                                  km={bp.km}
-                                  dateKey={dateKey}
-                                  onAdd={handleBonusAdd}
-                                  onDismiss={handleBonusDismiss}
-                                />
+                                <div key={event.id}>
+                                  <EventCard event={event} onAction={handleEventAction} />
+                                  {renderBonusPicksFor(event.id)}
+                                </div>
                               ))}
                             </div>
                           );
