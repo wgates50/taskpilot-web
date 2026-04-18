@@ -48,6 +48,36 @@ export async function getMessages(
   return result.rows as MessageRow[];
 }
 
+// Fetch user replies for a task since a given cursor timestamp.
+// Used by scheduled tasks to harvest feedback on each run (previously
+// came from Telegram). Returns oldest → newest so feedback is processed
+// in the order Will sent it.
+export async function getUserReplies(
+  taskId: string,
+  since?: string,
+  limit: number = 100
+): Promise<MessageRow[]> {
+  if (since) {
+    const result = await sql`
+      SELECT * FROM messages
+      WHERE task_id = ${taskId}
+        AND is_from_user = TRUE
+        AND timestamp > ${since}
+      ORDER BY timestamp ASC
+      LIMIT ${limit}
+    `;
+    return result.rows as MessageRow[];
+  }
+  const result = await sql`
+    SELECT * FROM messages
+    WHERE task_id = ${taskId}
+      AND is_from_user = TRUE
+    ORDER BY timestamp ASC
+    LIMIT ${limit}
+  `;
+  return result.rows as MessageRow[];
+}
+
 export async function getLatestMessages(): Promise<MessageRow[]> {
   // Get the most recent message for each task
   const result = await sql`

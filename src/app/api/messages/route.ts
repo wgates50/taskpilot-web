@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { insertMessage, getMessages, markTaskRead } from '@/lib/db';
+import { insertMessage, getMessages, getUserReplies, markTaskRead } from '@/lib/db';
 import { verifyApiKey, verifyClient } from '@/lib/auth';
 import { sendPushNotification } from '@/lib/push';
 import { TASK_MAP } from '@/lib/tasks';
@@ -51,18 +51,43 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET /api/messages?taskId=xxx&limit=50&before=ISO_TIMESTAMP
+// GET /api/messages
+//
+// Two modes:
+//
+//   1. Webapp read (no auth params) — returns the most recent N messages for
+//      a thread (both task-authored and user replies) and marks them read.
+//      Query: ?taskId=xxx&limit=50&before=ISO_TIMESTAMP
+//
+//   2. Scheduled-task feedback harvest — returns ONLY user replies since a
+//      cursor timestamp, in chronological order, and does NOT mark anything
+//      read. This is the replacement for the old `get_telegram_messages`
+//      feedback loop. Requires the TaskPilot API key because it exposes
+//      user-authored content to server-to-server callers.
+//      Query: ?taskId=xxx&isFromUser=true&since=ISO_TIMESTAMP&limit=100
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const taskId = searchParams.get('taskId');
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const isFromUser = searchParams.get('isFromUser') === 'true';
+    const since = searchParams.get('since') || undefined;
+    const limit = parseInt(searchParams.get('limit') || (isFromUser ? '100' : '50'), 10);
     const before = searchParams.get('before') || undefined;
 
     if (!taskId) {
       return NextResponse.json({ error: 'taskId is required' }, { status: 400 });
     }
 
+    // User-reply harvest path — auth required (API key or same-origin).
+    if (isFromUser) {
+      if (!verifyClient(req)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      const replies = await getUserReplies(taskId, since, limit);
+      return NextResponse.json({ messages: replies });
+    }
+
+    // Webapp thread read path — unchanged behaviour.
     const messages = await getMessages(taskId, limit, before);
 
     // Only mark as read on the initial (non-paginated) fetch — older pages
