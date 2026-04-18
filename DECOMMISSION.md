@@ -4,7 +4,7 @@ Tracking doc for retiring the Telegram delivery/feedback layer and replacing it 
 
 **Started:** 2026-04-18
 **Owner:** Will
-**Status:** In progress
+**Status:** Skill rewrites complete 2026-04-18; remaining work is UI/ops polish + Will-side revocation (bot token, MCP disconnect)
 
 ---
 
@@ -22,28 +22,28 @@ Telegram was the original delivery + feedback channel for every scheduled task. 
 
 These are prerequisites for the skill rewrites. Without them, decommissioning Telegram regresses the feedback loop.
 
-- [x] **Inbound reply endpoint** — extend `/api/messages` with a `GET` that returns user replies for a given `taskId` since a cursor timestamp (`since`), so each skill can harvest feedback on next run. Uses the existing `is_from_user` column — no schema change. Same `verifyClient` auth as POST. Return shape: `{ messages: [{ id, taskId, blocks, timestamp, isFromUser: true }] }`.
-- [ ] **Skill rewrites** — replace `get_telegram_messages` reads + `send_telegram_message` calls across all 13 active skills (canonical template: morning-brief)
-- [ ] **Ops / failure thread** — a dedicated TaskPilot thread for scheduled-task run failures (API 4xx/5xx, GCal auth errors, Postgres outages). Currently these alerts go to Telegram. Simplest: add a `taskId: "ops"` entry in `TASK_MAP`, and have each skill POST to that thread on caught errors
+- [x] **Inbound reply endpoint** — extend `/api/messages` with a `GET` that returns user replies for a given `taskId` since a cursor timestamp (`since`), so each skill can harvest feedback on next run. Uses the existing `is_from_user` column — no schema change. Same `verifyClient` auth as POST. Return shape: `{ messages: [{ id, taskId, blocks, timestamp, isFromUser: true }] }`. _Shipped in commit 320c9d4, verified end-to-end._
+- [x] **Skill rewrites** — replace `get_telegram_messages` reads + `send_telegram_message` calls across all 13 active skills (canonical template: morning-brief). _All 13 skills migrated 2026-04-18._
+- [~] **Ops / failure thread** — a dedicated TaskPilot thread for scheduled-task run failures. Partially covered: `calendar-sync` now POSTs failures to its own TaskPilot thread with `quickReplies: ["Retry now", "Mute 24h", "Open logs"]`. A shared `taskId: "ops"` entry is not wired yet — roll it in when the next skill needs cross-task alerting.
 - [ ] **Lapsed-subscription email fallback** — VAPID push can silently 410 when a device is wiped or the PWA is reinstalled. Detect expired subscriptions in `sendPushNotification` and email Will so he knows to re-open the app
 
 ## Skill migration checklist
 
 13 skills touch Telegram today. Migrate in this order (highest-feedback first).
 
-- [x] `morning-brief` (canonical template — reads feedback, sends to Daily topic)
-- [ ] `smart-reading-digest` (reads feedback on articles, sends to Daily topic)
-- [ ] `finance-tracker` (Finance topic)
-- [ ] `monthly-life-admin` (Finance topic, heavy reply parsing)
-- [ ] `email-to-calendar` (reply-driven calendar edits)
-- [ ] `london-openings-scanner` (Events topic)
-- [ ] `weekly-london-event-scanner` (Events topic)
-- [ ] `job-alert-scanner` (reply-driven filter adjustments)
-- [ ] `visit-review` (weekly check-in replies)
-- [ ] `daily-activity-engine` (Daily topic)
-- [ ] `data-sync-engine` (status output)
-- [ ] `calendar-sync` (status output, minimal Telegram use)
-- [ ] `weekly-planner` — already paused; just remove Telegram refs on final pass
+- [x] `morning-brief` (canonical template — feedback harvest via GET, sole delivery via POST, quickReplies)
+- [x] `smart-reading-digest` (article feedback → TaskPilot, `book_recs` block for Friday book section)
+- [x] `finance-tracker` (rich `finance_card` block, weekly + monthly wrap-up)
+- [x] `monthly-life-admin` (monthly check-in payload, quickReplies for cancel/action items)
+- [x] `email-to-calendar` (reply-driven calendar edits over SINCE window, event_card per added event)
+- [x] `london-openings-scanner` (grouped event_cards by category, quickReplies for "More like that")
+- [x] `weekly-london-event-scanner` (retired — absorbed into data-sync-engine; retirement note refreshed)
+- [x] `job-alert-scanner` (job_card per role grouped by tier, weekly digest)
+- [x] `visit-review` (weekly check-in prompt, Planning-tab deep link, quickReplies for went/didn't)
+- [x] `daily-activity-engine` (default silent — Planning tab is the surface; optional push only on time-sensitive triggers)
+- [x] `data-sync-engine` (post only when 5+ events or new places; otherwise skip)
+- [x] `calendar-sync` (failure alerts now POST to TaskPilot `calendar-sync` thread with Retry/Mute quickReplies)
+- [x] `weekly-planner` (unpaused and now canonical TaskPilot-only: calendar_preview + Heads-up + Closing-soon sections)
 
 **Per-skill migration steps:**
 1. Replace `get_telegram_messages` feedback harvest with `GET /api/messages?taskId=<id>&isFromUser=true&since=<lastRun>`
@@ -53,10 +53,10 @@ These are prerequisites for the skill rewrites. Without them, decommissioning Te
 
 ## Clean-up (after all skills migrated)
 
-- [ ] Remove the 5 Telegram rows from `will-profile.md` System Config table (chat ID DM, group chat ID, Daily/Finance/Events topic IDs)
-- [ ] Disconnect the Telegram MCP connector in Cowork (UI action, Will to do)
-- [ ] Revoke the Telegram bot token via BotFather (Will to do)
-- [ ] Delete any unused Telegram bot helpers in scheduled-task scripts (if any)
+- [x] Remove the 5 Telegram rows from `will-profile.md` System Config table (chat ID DM, group chat ID, Daily/Finance/Events topic IDs) — done 2026-04-18, Evidence Log entries retained as historical record
+- [ ] Disconnect the Telegram MCP connector in Cowork (UI action, **Will to do**)
+- [ ] Revoke the Telegram bot token via BotFather (**Will to do**)
+- [ ] Delete any unused Telegram bot helpers in scheduled-task scripts (nothing found during skill migration; re-check next time a skill is touched)
 
 ## PWA polish (needed once Telegram gone)
 
