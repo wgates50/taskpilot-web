@@ -11,6 +11,7 @@ import { BriefScreen } from '@/components/BriefScreen';
 import { CalendarScreen } from '@/components/CalendarScreen';
 import { ReadingScreen } from '@/components/ReadingScreen';
 import { ProfileScreen } from '@/components/ProfileScreen';
+import { UnescoTracker } from '@/components/UnescoTracker';
 import { ComingSoon } from '@/components/ComingSoon';
 
 // Kept for historical ThreadsScreen compatibility
@@ -115,13 +116,7 @@ export default function Home() {
               icon="activity"
             />
           )}
-          {tab === 'unesco'   && (
-            <ComingSoon
-              title="UNESCO"
-              blurb="A world-map tracker for every UNESCO site I've visited, with country filter and nearest-from-London sort — ships in Wave 2."
-              icon="globe"
-            />
-          )}
+          {tab === 'unesco'   && <UnescoTracker />}
           {tab === 'reading'  && <ReadingScreen />}
           {tab === 'settings' && <ProfileScreen />}
         </div>

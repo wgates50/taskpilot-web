@@ -195,11 +195,25 @@ export function CalendarScreen() {
   // ── Mark event status (went / didn't go / dismiss) ──
   const handleEventAction = async (eventId: string, action: 'accepted' | 'dismissed') => {
     try {
+      // Update event status in events cache
       await fetch('/api/events', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: eventId, status: action }),
       });
+
+      // Also log to interactions for cooldown/rotation tracking
+      const event = events.find(e => e.id === eventId);
+      const interactionType = action === 'accepted' ? 'attended' : 'missed';
+      await fetch('/api/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_key: event?.title || eventId,
+          interaction_type: interactionType,
+        }),
+      }).catch(() => {}); // non-blocking
+
       if (action === 'dismissed') {
         setEvents(prev => prev.filter(e => e.id !== eventId));
       } else {
@@ -219,7 +233,7 @@ export function CalendarScreen() {
         {/* Mode switcher */}
         <div className="flex bg-gray-100 rounded-md p-0.5 mb-3">
           {([
-            { id: 'personal' as CalendarMode, label: 'My Calendar' },
+            { id: 'personal' as CalendarMode, label: 'Personal' },
             { id: 'whats-on' as CalendarMode, label: "What's On" },
             { id: 'planner' as CalendarMode, label: 'Planner' },
           ]).map(m => (
@@ -377,8 +391,9 @@ function CalendarEventCard({
 
   // Personal events are already on the user's calendar — no "Add" needed.
   // What's On events need an explicit "Add to calendar" action.
-  // The DB status field is meaningless here (sync sets everything to 'accepted').
-  const showWentDidntGo = isPast;
+  const alreadyMarked = event.status === 'accepted' || event.status === 'dismissed';
+  const showWentDidntGo = isPast && !alreadyMarked;
+  const showMarkedStatus = isPast && alreadyMarked;
   const showAddToCalendar = !isPast && isWhatsOn && !addedToCalendar;
   const showJustAdded = !isPast && isWhatsOn && addedToCalendar;
 
@@ -445,6 +460,17 @@ function CalendarEventCard({
         </div>
       )}
 
+      {/* ── Past: Already marked ── */}
+      {showMarkedStatus && (
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <span className={`text-[11px] font-medium ${
+            event.status === 'accepted' ? 'text-green-600' : 'text-gray-400'
+          }`}>
+            {event.status === 'accepted' ? 'Went' : 'Didn\'t go'}
+          </span>
+        </div>
+      )}
+
       {/* ── Future What's On: Add to Calendar / Dismiss ── */}
       {showAddToCalendar && (
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
@@ -465,7 +491,7 @@ function CalendarEventCard({
             title="Add this event to your Google Calendar"
             className="flex-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
           >
-            {isAdding ? 'Adding...' : '📅 Add to calendar'}
+            {isAdding ? 'Adding...' : 'Add to calendar'}
           </button>
           <button
             onClick={() => onAction(event.id, 'dismissed')}
