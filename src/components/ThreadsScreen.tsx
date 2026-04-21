@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { TASKS, TASK_GROUPS, type TaskMeta } from '@/lib/tasks';
+import { useState, useRef } from 'react';
+import { TASKS, type TaskMeta } from '@/lib/tasks';
 import type { LatestMessage } from '@/app/page';
 
 interface Props {
@@ -61,7 +61,6 @@ export function ThreadsScreen({ latestMessages, unreads, pins, onOpenThread, onT
 
   const mainTasks = TASKS.filter(t => t.tier === 'main' && !t.retired && !t.hideFromThreads);
   const bgTasks = TASKS.filter(t => t.tier === 'background' && !t.retired && !t.hideFromThreads);
-  const retiredTasks = TASKS.filter(t => t.retired);
 
   // Sort: pinned first, then by latest message time
   const sortByRecency = (tasks: TaskMeta[]) => {
@@ -172,13 +171,13 @@ function ThreadRow({ task, latest, unread, pinned, showMenu, onTap, onLongPress,
   const preview = latest ? getMessagePreview(latest.blocks) : 'No messages yet';
   const time = latest ? getRelativeTime(latest.timestamp) : '';
 
-  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTouchStart = () => {
-    longPressTimer = setTimeout(onLongPress, 500);
+    longPressTimer.current = setTimeout(onLongPress, 500);
   };
   const handleTouchEnd = () => {
-    if (longPressTimer) clearTimeout(longPressTimer);
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
   };
 
   return (

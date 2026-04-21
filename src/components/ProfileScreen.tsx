@@ -64,7 +64,11 @@ export function ProfileScreen() {
   const [view, setView] = useState<ProfileView>('home');
   const [selectedTask, setSelectedTask] = useState<TaskMeta | null>(null);
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
-  const [googleBanner, setGoogleBanner] = useState<string | null>(null);
+  const [googleBanner, setGoogleBanner] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const g = new URLSearchParams(window.location.search).get('google');
+    return g ? (g === 'connected' ? '✓ Google Calendar connected' : `Google Calendar error: ${g}`) : null;
+  });
 
   useEffect(() => {
     fetch('/api/auth/google/status')
@@ -72,12 +76,10 @@ export function ProfileScreen() {
       .then(data => data && setGoogleStatus(data))
       .catch(() => {});
 
-    // Check OAuth redirect result
+    // Clean up OAuth redirect param from URL and schedule auto-dismiss
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const g = params.get('google');
+      const g = new URLSearchParams(window.location.search).get('google');
       if (g) {
-        setGoogleBanner(g === 'connected' ? '✓ Google Calendar connected' : `Google Calendar error: ${g}`);
         const url = new URL(window.location.href);
         url.searchParams.delete('google');
         window.history.replaceState({}, '', url.toString());

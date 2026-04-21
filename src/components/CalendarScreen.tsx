@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PlanningScreen } from './PlanningScreen';
 
 // ── Types ────────────────────────────────────────────────
@@ -112,6 +112,7 @@ export function CalendarScreen() {
   const fetchEvents = useCallback(async () => {
     if (mode === 'planner') { setLoading(false); return; }
     setLoading(true);
+    const { dates } = getWeekDates(weekOffset);
     try {
       const from = formatDate(dates[0]);
       const to = formatDate(dates[6]);

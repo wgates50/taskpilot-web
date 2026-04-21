@@ -756,6 +756,7 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    const { dates } = getWeekDates(weekOffset);
     try {
       const from = formatDate(dates[0]);
       const to = formatDate(dates[6]);
@@ -2080,6 +2081,7 @@ function EventCard({ event, onAction }: {
   onAction: (id: string, action: 'accepted' | 'dismissed') => void;
 }) {
   const emoji = event.category ? (CATEGORY_EMOJI[event.category] || CATEGORY_EMOJI[event.category.toLowerCase()] || '📅') : '📅';
+  // eslint-disable-next-line react-hooks/purity
   const isClosingSoon = event.closing_date && new Date(event.closing_date) <= new Date(Date.now() + 7 * 86400000);
   const isFromCalendar = !Array.isArray(event.tags) || !event.tags.some(t => typeof t === 'string' && t.startsWith('cal:'));
   const visibleTags = event.tags?.filter(t => t !== 'gcal' && t !== 'personal' && t !== 'all-day' && !t.startsWith('cal:')).slice(0, 3) || [];

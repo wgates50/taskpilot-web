@@ -169,6 +169,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
     const rawId = body.id || body.notion_page_id;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _rawId, notion_page_id: _rawNotionId, ...updates } = body;
     const id = rawId ? normalizeId(rawId) : null;
 
