@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { WeatherCard } from './cards/WeatherCard';
-import { EventCard } from './cards/EventCard';
-import { ArticleCard } from './cards/ArticleCard';
-import { CalendarPreviewCard } from './cards/CalendarPreviewCard';
-// Task metadata no longer needed after reply strip removal
+import { Glyph } from './ui/Glyph';
+import { Chip } from './ui/Chip';
+import { SectionLabel } from './ui/SectionLabel';
+import { Icon } from './ui/Icon';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -32,215 +31,311 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-function formatDay(d: Date): string {
+function formatLongDate(d: Date): string {
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+function formatShortDate(d: Date): string {
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    .toUpperCase().replace(/,/g, ' ·');
 }
 
-// ── Block renderer (document style, not chat bubbles) ────
+// Pick a deterministic glyph tone from a seed string
+const TONES = ['a', 'b', 'c', 'd', 'e', 'f'] as const;
+function toneFor(seed: string): (typeof TONES)[number] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
+  return TONES[Math.abs(h) % TONES.length];
+}
 
-function BriefBlock({ block: rawBlock }: { block: Block }) {
-  const block: Block = {
-    type: rawBlock.type,
-    data: (rawBlock.data as Record<string, unknown>) || (rawBlock as Record<string, unknown>),
+// Extract monogram initial(s) from title/venue
+function monoFor(str: string): string {
+  const clean = (str || '').trim();
+  if (!clean) return '·';
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return clean.slice(0, 2).toUpperCase();
+}
+
+
+// ── Weather block ────────────────────────────────────────
+
+interface WeatherData {
+  temp?: number; conditions?: string;
+  high?: number; low?: number;
+  rain?: number; rainChance?: number;
+  sunrise?: string; sunset?: string;
+}
+
+function WeatherBlock({ data }: { data: WeatherData }) {
+  const temp = data.temp ?? 0;
+  const cond = data.conditions || 'Clear';
+  const high = data.high, low = data.low;
+  const rain = data.rain ?? data.rainChance;
+  return (
+    <div className="weather">
+      <div>
+        <div className="weather-temp">{Math.round(temp)}<sup>°C</sup></div>
+        <div className="weather-cond">{cond}</div>
+      </div>
+      <div className="weather-stats">
+        {high !== undefined && low !== undefined && (
+          <div><b>H</b>{Math.round(high)}°&nbsp;&nbsp;<b>L</b>{Math.round(low)}°</div>
+        )}
+        {rain !== undefined && <div><b>RAIN</b>{rain}%</div>}
+        {data.sunrise && data.sunset && (
+          <div><b>SUN</b>{data.sunrise} — {data.sunset}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Next-up event ────────────────────────────────────────
+
+interface EventData {
+  title?: string; venue?: string; time?: string;
+  date?: string; dur?: string; duration?: string;
+  mono?: string; tone?: string;
+  tags?: string[]; price?: string; reason?: string;
+  url?: string;
+}
+
+function NextUp({ event }: { event: EventData }) {
+  const title = event.title || 'Untitled';
+  const venue = event.venue || '';
+  const time = event.time || '';
+  const dur = event.dur || event.duration || '';
+  return (
+    <div className="nextup" role="button" tabIndex={0}>
+      <div className="nextup-rail" />
+      <div className="nextup-time">NEXT UP{time && ` · ${time}`}</div>
+      <div className="nextup-title">{title}</div>
+      <div className="nextup-meta">{[venue, dur].filter(Boolean).join(' · ')}</div>
+    </div>
+  );
+}
+
+// ── Event row (today's list) ─────────────────────────────
+
+function EventRow({ event }: { event: EventData }) {
+  const title = event.title || 'Untitled';
+  const venue = event.venue || '';
+  const time = event.time || '';
+  const dur = event.dur || event.duration || '';
+  const seed = title + venue;
+  return (
+    <div className="event-row" role="button" tabIndex={0}>
+      <div className="event-time">
+        {time || '—'}
+        {dur && <span className="dur">{dur}</span>}
+      </div>
+      <div className="event-body">
+        <div className="event-title">{title}</div>
+        {venue && <div className="event-venue">{venue}</div>}
+      </div>
+      <Glyph mono={event.mono || monoFor(title)} tone={(event.tone as 'a' | 'b' | 'c' | 'd' | 'e' | 'f') || toneFor(seed)} size="sm" />
+    </div>
+  );
+}
+
+
+// ── Week ahead mini bar chart ────────────────────────────
+
+function WeekPreviewMini({ counts }: { counts?: number[] }) {
+  const bars = counts && counts.length === 7 ? counts : [3, 2, 4, 1, 3, 2, 2];
+  const max = Math.max(...bars, 1);
+  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const total = bars.reduce((a, b) => a + b, 0);
+  const freeEvenings = bars.filter((c) => c <= 1).length;
+  return (
+    <div className="tp-card" style={{ padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Week ahead</div>
+        <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+          {total} event{total === 1 ? '' : 's'}
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, alignItems: 'end' }}>
+        {bars.map((c, i) => (
+          <div key={i} style={{ textAlign: 'center' }}>
+            <div
+              style={{
+                height: 6 + (c / max) * 38,
+                background: i === 0 ? 'var(--accent)' : 'var(--line-2)',
+                borderRadius: 3,
+                marginBottom: 6,
+              }}
+            />
+            <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: i === 0 ? 'var(--accent)' : 'var(--text-3)' }}>
+              {days[i]}
+            </div>
+            <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-4)', marginTop: 1 }}>{c}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+        <Chip>Balanced</Chip>
+        {freeEvenings > 0 && <Chip>{freeEvenings} free evening{freeEvenings === 1 ? '' : 's'}</Chip>}
+      </div>
+    </div>
+  );
+}
+
+
+// ── Today's reads digest row ─────────────────────────────
+
+interface ArticleData {
+  title?: string; source?: string; topic?: string; url?: string;
+  readingTimeMinutes?: number; minutes?: number;
+  isDiscovery?: boolean;
+}
+
+function ArticleRow({ article, index }: { article: ArticleData; index: number }) {
+  const title = article.title || 'Untitled';
+  const source = article.source || '';
+  const topic = article.topic || '';
+  const minutes = article.readingTimeMinutes ?? article.minutes;
+  const url = article.url;
+
+  const open = () => {
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const getText = (data: Record<string, unknown>): string =>
-    String(data.text ?? data.content ?? data.title ?? '');
-
-  switch (block.type) {
-    case 'header':
-      // Suppress generic "Morning Brief" headers — we have our own
-      return null;
-
-    case 'weather_card':
-      return <WeatherCard data={block.data} />;
-
-    case 'calendar_preview':
-      return <CalendarPreviewCard data={block.data} />;
-
-    case 'event_card':
-      return <EventCard data={block.data} />;
-
-    case 'article_card':
-      return <ArticleCard data={block.data} />;
-
-    case 'section_header': {
-      const text = getText(block.data);
-      return (
-        <div className="flex items-center gap-2 pt-1 pb-0.5">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-            {text}
-          </p>
-          <div className="flex-1 h-px bg-gray-200" />
+  return (
+    <button className="article" onClick={open} type="button">
+      <div className="article-num">{String(index + 1).padStart(2, '0')}</div>
+      <div>
+        <div className="article-title">{title}</div>
+        <div className="article-meta">
+          {source && <span><b>{source}</b></span>}
+          {minutes !== undefined && <span>· {minutes} min</span>}
+          {topic && <span>· {topic}</span>}
+          {article.isDiscovery && <span style={{ color: 'var(--accent)' }}>· discovery</span>}
         </div>
-      );
-    }
-
-    case 'text': {
-      const text = getText(block.data);
-      if (!text) return null;
-      return (
-        <div className="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm">
-          <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-line">{text}</p>
-        </div>
-      );
-    }
-
-    default:
-      return null;
-  }
+      </div>
+    </button>
+  );
 }
 
-// ── Main Component ───────────────────────────────────────
+
+// ── Main component ───────────────────────────────────────
 
 export function BriefScreen() {
   const [briefMsg, setBriefMsg] = useState<MessageRow | null>(null);
   const [readingMsg, setReadingMsg] = useState<MessageRow | null>(null);
-  const [briefLoading, setBriefLoading] = useState(true);
-  const [readingLoading, setReadingLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchBrief = useCallback(async () => {
-    try {
-      const res = await fetch('/api/messages?taskId=morning-brief&limit=1');
-      if (res.ok) {
-        const data = await res.json();
-        setBriefMsg(data.messages?.[0] ?? null);
-      }
-    } catch (e) {
-      console.error('Failed to fetch brief:', e);
-    } finally {
-      setBriefLoading(false);
-    }
-  }, []);
-
-  const fetchReading = useCallback(async () => {
-    try {
-      const res = await fetch('/api/messages?taskId=smart-reading-digest&limit=1');
-      if (res.ok) {
-        const data = await res.json();
-        setReadingMsg(data.messages?.[0] ?? null);
-      }
-    } catch (e) {
-      console.error('Failed to fetch reading digest:', e);
-    } finally {
-      setReadingLoading(false);
-    }
+  const fetchAll = useCallback(async () => {
+    const [briefRes, readingRes] = await Promise.all([
+      fetch('/api/messages?taskId=morning-brief&limit=1').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch('/api/messages?taskId=smart-reading-digest&limit=1').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
+    setBriefMsg(briefRes?.messages?.[0] ?? null);
+    setReadingMsg(readingRes?.messages?.[0] ?? null);
   }, []);
 
   useEffect(() => {
-    fetchBrief();
-    fetchReading();
-  }, [fetchBrief, fetchReading]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchAll().finally(() => setLoading(false));
+  }, [fetchAll]);
 
   const refresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchBrief(), fetchReading()]);
+    await fetchAll();
     setRefreshing(false);
   };
 
-  // Extract article blocks from reading digest
-  const articleBlocks = (readingMsg?.blocks ?? []).filter(b => b.type === 'article_card');
+  // Parse blocks into the shapes the new design needs.
+  const blocks = briefMsg?.blocks ?? [];
+  const weatherBlock = blocks.find((b) => b.type === 'weather_card');
+  const eventBlocks = blocks.filter((b) => b.type === 'event_card');
+  const weatherData = (weatherBlock?.data ?? weatherBlock) as WeatherData | undefined;
+  const events = eventBlocks.map((b) => (b.data ?? b) as EventData);
+  const nextEvent = events[0];
 
-  // Brief content blocks (exclude header + article_cards — articles come from reading digest)
-  const briefBlocks = (briefMsg?.blocks ?? []).filter(b => b.type !== 'article_card');
+  const articleBlocks = (readingMsg?.blocks ?? []).filter((b) => b.type === 'article_card');
+  const articles = articleBlocks.slice(0, 3).map((b) => (b.data ?? b) as ArticleData);
+
+  const now = new Date();
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
-      {/* ── Header ── */}
-      <div className="bg-white border-b px-4 pt-12 lg:pt-4 pb-3 shrink-0">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">{getGreeting()}</h1>
-            <p className="text-xs text-gray-400 mt-0.5">{formatDay(new Date())}</p>
-          </div>
-          <button
-            onClick={refresh}
-            disabled={refreshing}
-            className="p-2 -mr-1 text-gray-400 hover:text-gray-600 transition-colors"
-            title="Refresh"
-          >
-            <svg
-              className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
-              fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-            </svg>
-          </button>
+    <div>
+      <div className="brief-hero" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <h1 className="greeting">{getGreeting()}, Will.</h1>
+          <div className="greeting-date">{formatLongDate(now)} · London</div>
         </div>
+        <button
+          onClick={refresh}
+          disabled={refreshing}
+          className="tp-btn ghost sm"
+          aria-label="Refresh"
+          style={{ flexShrink: 0 }}
+        >
+          <Icon name="refresh" size={14} />
+        </button>
       </div>
 
-      {/* ── Content ── */}
-      <div className="flex-1 overflow-y-auto px-4 lg:px-6 pb-24">
-        {/* Desktop: two-column layout — brief on left, reads on right */}
-        <div className="lg:grid lg:grid-cols-5 lg:gap-6 mt-4">
 
-          {/* ── Left: Morning Brief (3/5 on desktop) ── */}
-          <div className="lg:col-span-3">
-            {briefLoading ? (
-              <div className="space-y-3">
-                {[80, 56, 96, 64].map((w, i) => (
-                  <div key={i} className="bg-gray-200 animate-pulse rounded-xl h-20" style={{ opacity: 1 - i * 0.15 }} />
-                ))}
-              </div>
-            ) : briefMsg ? (
-              <div className="space-y-2.5">
-                <span className="text-[10px] text-gray-400">
-                  Morning Brief · {timeAgo(briefMsg.timestamp)}
-                </span>
-                {briefBlocks.map((block, i) => (
-                  <BriefBlock key={i} block={block} />
-                ))}
-              </div>
+      <div className="brief-grid">
+        {/* Left column — weather + next-up + today's events */}
+        <div>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr', marginBottom: 20 }}>
+            {weatherData ? (
+              <WeatherBlock data={weatherData} />
             ) : (
-              <div className="text-center py-10">
-                <p className="text-3xl mb-2">☀️</p>
-                <p className="text-sm font-medium text-gray-700">No brief yet today</p>
-                <p className="text-xs text-gray-400 mt-1">Your morning brief runs at 6 AM</p>
+              <div className="weather" style={{ opacity: 0.5 }}>
+                <div>
+                  <div className="weather-temp">—</div>
+                  <div className="weather-cond">Weather unavailable</div>
+                </div>
+              </div>
+            )}
+            {nextEvent ? (
+              <NextUp event={nextEvent} />
+            ) : (
+              <div className="nextup" style={{ opacity: 0.6 }}>
+                <div className="nextup-time">NEXT UP</div>
+                <div className="nextup-title">Nothing scheduled</div>
+                <div className="nextup-meta">Your calendar is clear</div>
               </div>
             )}
           </div>
 
-          {/* ── Right: Today's Reads (2/5 on desktop) ── */}
-          <div className="lg:col-span-2 mt-5 lg:mt-0">
-            {readingLoading ? (
-              <div className="space-y-3">
-                <div className="bg-gray-200 animate-pulse rounded-xl h-28" />
-                <div className="bg-gray-200 animate-pulse rounded-xl h-28 opacity-70" />
-              </div>
-            ) : articleBlocks.length > 0 ? (
-              <div className="space-y-2.5">
-                <div className="flex items-center gap-2 pb-0.5">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    Today&apos;s Reads
-                  </p>
-                  <div className="flex-1 h-px bg-gray-200" />
-                  {readingMsg && (
-                    <span className="text-[10px] text-gray-400 whitespace-nowrap">
-                      {timeAgo(readingMsg.timestamp)}
-                    </span>
-                  )}
-                </div>
-                {articleBlocks.map((block, i) => (
-                  <ArticleCard key={i} data={block.data as Record<string, unknown>} />
-                ))}
-              </div>
-            ) : null}
+          <SectionLabel
+            count={events.length}
+            right={<span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-4)' }}>{formatShortDate(now)}</span>}
+          >
+            Today
+          </SectionLabel>
+          <div className="tp-card flat">
+            {loading ? (
+              <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>Loading…</div>
+            ) : events.length === 0 ? (
+              <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>No events today.</div>
+            ) : (
+              events.map((e, i) => <EventRow key={i} event={e} />)
+            )}
           </div>
         </div>
-      </div>
 
+        {/* Right column — week ahead + today's reads */}
+        <div>
+          <SectionLabel>Week ahead</SectionLabel>
+          <WeekPreviewMini />
+          <div style={{ height: 20 }} />
+          <SectionLabel count={articles.length}>Today&rsquo;s reads</SectionLabel>
+          {articles.length === 0 ? (
+            <div style={{ padding: '14px 0', color: 'var(--text-3)', fontSize: 13 }}>
+              {loading ? 'Loading…' : 'Reading digest runs at 7am.'}
+            </div>
+          ) : (
+            articles.map((a, i) => <ArticleRow key={i} article={a} index={i} />)
+          )}
+        </div>
+      </div>
     </div>
   );
 }

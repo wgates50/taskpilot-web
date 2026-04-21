@@ -1,0 +1,203 @@
+/* ============================================================
+   TaskPilot — Design tokens
+   Ported from TaskPilot.html redesign (2026-04-20).
+   Linear / Things 3–inspired. Two palettes, four accents,
+   two densities, light + dark.
+   ============================================================ */
+
+:root {
+  /* Warm-neutral palette (Things 3 territory) */
+  --warm-0:  #fbfaf7;
+  --warm-50: #f5f3ee;
+  --warm-100: #ecebe5;
+  --warm-150: #dedcd4;
+  --warm-200: #cac7bc;
+  --warm-300: #a8a498;
+  --warm-400: #807c70;
+  --warm-500: #5f5c52;
+  --warm-600: #403e38;
+  --warm-700: #2b2a25;
+  --warm-800: #1c1b17;
+  --warm-900: #0e0d0b;
+
+  /* Cool-neutral palette (Linear territory) */
+  --cool-0:  #fbfbfc;
+  --cool-50: #f5f6f8;
+  --cool-100: #ecedf0;
+  --cool-150: #dfe1e6;
+  --cool-200: #c7cad2;
+  --cool-300: #a2a6b2;
+  --cool-400: #797d8a;
+  --cool-500: #595c67;
+  --cool-600: #3e414a;
+  --cool-700: #282a31;
+  --cool-800: #191a1f;
+  --cool-900: #0b0c10;
+
+  /* Accent — default indigo */
+  --accent:      oklch(0.56 0.18 268);
+  --accent-soft: oklch(0.94 0.04 268);
+  --accent-fg:   #ffffff;
+  --accent-weak: oklch(0.62 0.14 268);
+
+  /* Semantic (Linear direction by default) */
+  --bg:        var(--cool-0);
+  --surface:   #ffffff;
+  --surface-2: var(--cool-50);
+  --line:      var(--cool-100);
+  --line-2:    var(--cool-150);
+  --text:      var(--cool-800);
+  --text-2:    var(--cool-500);
+  --text-3:    var(--cool-400);
+  --text-4:    var(--cool-300);
+
+  /* Type */
+  --font-sans:  var(--tp-font-sans, 'Inter'), -apple-system, system-ui, sans-serif;
+  --font-mono:  var(--tp-font-mono, 'JetBrains Mono'), ui-monospace, 'SF Mono', monospace;
+  --font-serif: var(--tp-font-serif, 'Fraunces'), Georgia, serif;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+
+  /* Radii */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-4: 14px;
+  --r-5: 20px;
+
+  /* Shadows */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-3: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  /* Density-dependent (default = default) */
+  --row-py: 12px;
+  --card-py: 16px;
+  --card-px: 16px;
+  --stack: 10px;
+
+  /* Fixed shell heights */
+  --sidebar-w: 232px;
+  --topbar-h: 52px;
+  --tabbar-h: 64px;
+}
+
+/* ---------- Direction variants ---------- */
+html[data-direction="linear"] {
+  --bg: var(--cool-0);
+  --surface: #ffffff;
+  --surface-2: var(--cool-50);
+  --line: var(--cool-100);
+  --line-2: var(--cool-150);
+  --text: var(--cool-800);
+  --text-2: var(--cool-500);
+  --text-3: var(--cool-400);
+  --text-4: var(--cool-300);
+  --r-3: 8px;
+  --r-4: 10px;
+}
+
+html[data-direction="things"] {
+  --bg: var(--warm-0);
+  --surface: #fefdfa;
+  --surface-2: var(--warm-50);
+  --line: var(--warm-100);
+  --line-2: var(--warm-150);
+  --text: var(--warm-800);
+  --text-2: var(--warm-500);
+  --text-3: var(--warm-400);
+  --text-4: var(--warm-300);
+  --r-3: 12px;
+  --r-4: 16px;
+}
+
+html[data-direction="current"] {
+  --bg: #f9fafb;
+  --surface: #ffffff;
+  --surface-2: #f3f4f6;
+  --line: #e5e7eb;
+  --line-2: #d1d5db;
+  --text: #111827;
+  --text-2: #6b7280;
+  --text-3: #9ca3af;
+  --text-4: #d1d5db;
+}
+
+/* ---------- Accent variants ---------- */
+html[data-accent="indigo"] {
+  --accent: oklch(0.55 0.17 268);
+  --accent-soft: oklch(0.95 0.03 268);
+  --accent-weak: oklch(0.62 0.12 268);
+}
+html[data-accent="rust"] {
+  --accent: oklch(0.58 0.15 40);
+  --accent-soft: oklch(0.95 0.03 40);
+  --accent-weak: oklch(0.65 0.10 40);
+}
+html[data-accent="forest"] {
+  --accent: oklch(0.52 0.11 155);
+  --accent-soft: oklch(0.95 0.03 155);
+  --accent-weak: oklch(0.60 0.08 155);
+}
+html[data-accent="graphite"] {
+  --accent: oklch(0.35 0.02 268);
+  --accent-soft: oklch(0.94 0.01 268);
+  --accent-weak: oklch(0.50 0.02 268);
+}
+
+/* ---------- Density variants ---------- */
+html[data-density="comfortable"] { --row-py: 14px; --card-py: 16px; --stack: 12px; }
+html[data-density="compact"]     { --row-py: 9px;  --card-py: 12px; --stack: 8px;  }
+
+/* ---------- Dark mode ---------- */
+html[data-theme="dark"][data-direction="linear"] {
+  --bg: #0b0c10;
+  --surface: #121318;
+  --surface-2: #171921;
+  --line: #24262e;
+  --line-2: #2f3139;
+  --text: #e6e7ea;
+  --text-2: #9397a0;
+  --text-3: #6b6f78;
+  --text-4: #4a4d55;
+}
+html[data-theme="dark"][data-direction="things"] {
+  --bg: #14130f;
+  --surface: #1c1a15;
+  --surface-2: #23211b;
+  --line: #2d2a22;
+  --line-2: #3a362d;
+  --text: #ecebe5;
+  --text-2: #a8a498;
+  --text-3: #807c70;
+  --text-4: #5f5c52;
+}
+html[data-theme="dark"][data-direction="current"] {
+  --bg: #0a0a0a;
+  --surface: #111111;
+  --surface-2: #1a1a1a;
+  --line: #262626;
+  --line-2: #2e2e2e;
+  --text: #f3f4f6;
+  --text-2: #9ca3af;
+  --text-3: #6b7280;
+  --text-4: #4b5563;
+}
+
+/* Slightly lift accent in dark mode so it clears contrast */
+html[data-theme="dark"] {
+  --accent:      oklch(0.72 0.16 268);
+  --accent-soft: oklch(0.28 0.08 268);
+  --accent-weak: oklch(0.62 0.14 268);
+}
+html[data-theme="dark"][data-accent="rust"]     { --accent: oklch(0.72 0.14 40);  --accent-soft: oklch(0.28 0.08 40);  --accent-weak: oklch(0.65 0.10 40); }
+html[data-theme="dark"][data-accent="forest"]   { --accent: oklch(0.70 0.11 155); --accent-soft: oklch(0.26 0.06 155); --accent-weak: oklch(0.60 0.08 155); }
+html[data-theme="dark"][data-accent="graphite"] { --accent: oklch(0.82 0.02 268); --accent-soft: oklch(0.26 0.01 268); --accent-weak: oklch(0.62 0.02 268); }
