@@ -234,14 +234,28 @@ export function ReadingScreen() {
     const current = reactions[id] ?? null;
     const next = current === type ? null : type;
     setReactions((prev) => ({ ...prev, [id]: next }));
+
+    // Find the article so we can log a human-readable detail alongside the id.
+    const article = articles.find(
+      (a) => (a.id || hashId(a.url || a.title || '')) === id,
+    );
+    const title = article?.title ?? '';
+    const source = article?.source ?? '';
+
+    // `/api/profile/evidence` contract: { taskId, type, detail } — detail is a
+    // plain TEXT column in evidence_log. We encode action + metadata so the
+    // smart-reading-digest scheduled task can parse it on the next run.
+    const action = next === null ? `reaction_cleared` : `thumbs_${next}`;
+    const detail = `${action} | ${id} | ${source ? `${source} — ` : ''}${title}`;
+
     try {
       await fetch('/api/profile/evidence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          task_id: 'smart-reading-digest',
-          item_id: id,
-          reaction: next,
+          taskId: 'smart-reading-digest',
+          type: 'reaction',
+          detail,
         }),
       });
     } catch {

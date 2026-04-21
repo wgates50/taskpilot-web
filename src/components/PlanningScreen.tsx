@@ -1330,8 +1330,8 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
               </div>
             )}
 
-            {/* Day-by-day suggestions — responsive grid: 1 col mobile, 2 lg, 3 xl */}
-            <div className="mt-2 lg:grid lg:grid-cols-2 lg:gap-x-4 xl:grid-cols-3">
+            {/* Day-by-day suggestions — responsive grid: 1 col mobile, 7 col on lg+ */}
+            <div className="mt-2 lg:grid lg:grid-cols-7 lg:gap-x-3">
             {dates.map(date => {
               const dateKey = formatDate(date);
               // Which morning/afternoon/evening buckets should render for this day.

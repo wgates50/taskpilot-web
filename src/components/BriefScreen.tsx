@@ -140,43 +140,89 @@ function EventRow({ event }: { event: EventData }) {
 }
 
 
+// ── Calendar preview types (from morning-brief `calendar_preview` block) ──
+
+interface CalendarDayEvent {
+  title: string;
+  time?: string;
+  location?: string;
+}
+interface CalendarDay {
+  label?: string;
+  day?: string;
+  events: CalendarDayEvent[] | number;
+  energy?: string;
+  freeEvening?: boolean;
+  suggestion?: string;
+}
+interface CalendarPreviewData {
+  energy?: string;
+  days?: CalendarDay[];
+}
+
+function dayCount(d: CalendarDay): number {
+  return typeof d.events === 'number' ? d.events : (d.events ?? []).length;
+}
+function dayEvents(d: CalendarDay): CalendarDayEvent[] {
+  return typeof d.events === 'number' ? [] : (d.events ?? []);
+}
+
 // ── Week ahead mini bar chart ────────────────────────────
 
-function WeekPreviewMini({ counts }: { counts?: number[] }) {
-  const bars = counts && counts.length === 7 ? counts : [3, 2, 4, 1, 3, 2, 2];
+function WeekPreviewMini({ days }: { days?: CalendarDay[] }) {
+  const list = (days ?? []).slice(0, 7);
+  const hasRealData = list.length > 0;
+
+  // Always render 7 slots — pad with zeros if skill sent fewer days.
+  const fallbackLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const bars = Array.from({ length: 7 }, (_, i) => list[i] ? dayCount(list[i]) : 0);
+  const labels = Array.from({ length: 7 }, (_, i) => {
+    const lab = (list[i]?.label || list[i]?.day || '').trim();
+    return lab ? lab.slice(0, 1).toUpperCase() : fallbackLabels[i];
+  });
+  const energies = Array.from({ length: 7 }, (_, i) => list[i]?.energy || '');
+
   const max = Math.max(...bars, 1);
-  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   const total = bars.reduce((a, b) => a + b, 0);
-  const freeEvenings = bars.filter((c) => c <= 1).length;
+  const freeEvenings = list.filter((d) => dayCount(d) <= 1 || d.freeEvening).length;
+
   return (
     <div className="tp-card" style={{ padding: '14px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Week ahead</div>
         <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-          {total} event{total === 1 ? '' : 's'}
+          {hasRealData ? `${total} event${total === 1 ? '' : 's'}` : '—'}
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, alignItems: 'end' }}>
         {bars.map((c, i) => (
-          <div key={i} style={{ textAlign: 'center' }}>
+          <div key={i} style={{ textAlign: 'center' }} title={energies[i] ? `${labels[i]} · ${energies[i]}` : labels[i]}>
             <div
               style={{
                 height: 6 + (c / max) * 38,
                 background: i === 0 ? 'var(--accent)' : 'var(--line-2)',
                 borderRadius: 3,
                 marginBottom: 6,
+                opacity: hasRealData ? 1 : 0.4,
               }}
             />
             <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: i === 0 ? 'var(--accent)' : 'var(--text-3)' }}>
-              {days[i]}
+              {labels[i]}
             </div>
-            <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-4)', marginTop: 1 }}>{c}</div>
+            <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-4)', marginTop: 1 }}>
+              {hasRealData ? c : '·'}
+            </div>
           </div>
         ))}
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-        <Chip>Balanced</Chip>
-        {freeEvenings > 0 && <Chip>{freeEvenings} free evening{freeEvenings === 1 ? '' : 's'}</Chip>}
+        {!hasRealData ? (
+          <Chip>No calendar preview</Chip>
+        ) : (
+          <>
+            {freeEvenings > 0 && <Chip>{freeEvenings} free evening{freeEvenings === 1 ? '' : 's'}</Chip>}
+          </>
+        )}
       </div>
     </div>
   );
@@ -247,16 +293,60 @@ export function BriefScreen() {
     setRefreshing(false);
   };
 
-  // Parse blocks into the shapes the new design needs.
+  // Parse blocks in order so we can group section_header + text pairs and
+  // keep the original presentation flow from the morning-brief skill.
   const blocks = briefMsg?.blocks ?? [];
-  const weatherBlock = blocks.find((b) => b.type === 'weather_card');
-  const eventBlocks = blocks.filter((b) => b.type === 'event_card');
-  const weatherData = (weatherBlock?.data ?? weatherBlock) as WeatherData | undefined;
-  const events = eventBlocks.map((b) => (b.data ?? b) as EventData);
-  const nextEvent = events[0];
+  let weatherData: WeatherData | undefined;
+  let calendarPreview: CalendarPreviewData | undefined;
+  const whatsOn: EventData[] = [];
+  const briefSections: { header: string; texts: string[] }[] = [];
+  const standaloneTexts: string[] = [];
+  let currentSection: { header: string; texts: string[] } | null = null;
+
+  for (const block of blocks) {
+    const data = (block.data ?? block) as Record<string, unknown>;
+    switch (block.type) {
+      case 'header':
+        // suppress — the screen has its own greeting
+        break;
+      case 'weather_card':
+        weatherData = data as WeatherData;
+        break;
+      case 'calendar_preview':
+        calendarPreview = data as CalendarPreviewData;
+        break;
+      case 'event_card':
+        whatsOn.push(data as EventData);
+        break;
+      case 'section_header': {
+        const text = String(data.text ?? data.content ?? data.title ?? '').trim();
+        currentSection = { header: text, texts: [] };
+        briefSections.push(currentSection);
+        break;
+      }
+      case 'text': {
+        const text = String(data.text ?? data.content ?? data.title ?? '').trim();
+        if (!text) break;
+        if (currentSection) currentSection.texts.push(text);
+        else standaloneTexts.push(text);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  // Today = first day in calendar_preview. Week ahead = all days.
+  const days = calendarPreview?.days ?? [];
+  const todayCal = days[0];
+  const todayEvents: CalendarDayEvent[] = todayCal ? dayEvents(todayCal) : [];
+  const nextTodayEvent = todayEvents[0];
+  const nextEvent: EventData | undefined = nextTodayEvent
+    ? { title: nextTodayEvent.title, venue: nextTodayEvent.location, time: nextTodayEvent.time }
+    : undefined;
 
   const articleBlocks = (readingMsg?.blocks ?? []).filter((b) => b.type === 'article_card');
-  const articles = articleBlocks.slice(0, 3).map((b) => (b.data ?? b) as ArticleData);
+  const articles = articleBlocks.map((b) => (b.data ?? b) as ArticleData);
 
   const now = new Date();
 
@@ -305,7 +395,7 @@ export function BriefScreen() {
           </div>
 
           <SectionLabel
-            count={events.length}
+            count={todayEvents.length}
             right={<span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-4)' }}>{formatShortDate(now)}</span>}
           >
             Today
@@ -313,18 +403,84 @@ export function BriefScreen() {
           <div className="tp-card flat">
             {loading ? (
               <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>Loading…</div>
-            ) : events.length === 0 ? (
-              <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>No events today.</div>
+            ) : !calendarPreview ? (
+              <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>
+                No calendar preview in today&rsquo;s brief.
+              </div>
+            ) : todayEvents.length === 0 ? (
+              <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>
+                Nothing on your calendar today.
+              </div>
             ) : (
-              events.map((e, i) => <EventRow key={i} event={e} />)
+              todayEvents.map((e, i) => (
+                <EventRow
+                  key={i}
+                  event={{ title: e.title, venue: e.location, time: e.time }}
+                />
+              ))
             )}
           </div>
+
+          {/* What's on — activity suggestions from the Activity Engine */}
+          {whatsOn.length > 0 && (
+            <>
+              <div style={{ height: 20 }} />
+              <SectionLabel count={whatsOn.length}>What&rsquo;s on</SectionLabel>
+              <div className="tp-card flat">
+                {whatsOn.map((e, i) => <EventRow key={i} event={e} />)}
+              </div>
+            </>
+          )}
+
+          {/* Standalone text blocks (e.g. "picked up" acknowledgement) */}
+          {standaloneTexts.length > 0 && (
+            <>
+              <div style={{ height: 20 }} />
+              {standaloneTexts.map((t, i) => (
+                <div
+                  key={i}
+                  className="tp-card"
+                  style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 10, whiteSpace: 'pre-line' }}
+                >
+                  {t}
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* Named sections — Worth Knowing (email scan), On Your Plate (Asana), etc. */}
+          {briefSections.map((s, i) => (
+            <div key={i}>
+              <div style={{ height: 20 }} />
+              <SectionLabel>{s.header || 'Notes'}</SectionLabel>
+              <div className="tp-card" style={{ padding: '14px 16px' }}>
+                {s.texts.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--text-3)' }}>—</div>
+                ) : (
+                  s.texts.map((t, j) => (
+                    <div
+                      key={j}
+                      style={{
+                        fontSize: 13,
+                        color: 'var(--text-2)',
+                        lineHeight: 1.6,
+                        whiteSpace: 'pre-line',
+                        marginTop: j === 0 ? 0 : 10,
+                      }}
+                    >
+                      {t}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Right column — week ahead + today's reads */}
         <div>
           <SectionLabel>Week ahead</SectionLabel>
-          <WeekPreviewMini />
+          <WeekPreviewMini days={calendarPreview?.days} />
           <div style={{ height: 20 }} />
           <SectionLabel count={articles.length}>Today&rsquo;s reads</SectionLabel>
           {articles.length === 0 ? (
