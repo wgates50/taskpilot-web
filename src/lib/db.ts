@@ -949,6 +949,96 @@ export async function setupDatabase(): Promise<void> {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_brief_impressions_type_last ON brief_impressions(item_type, last_shown_at DESC)`;
+
+  // ── Shown Items (cooldown/rotation) ──────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS shown_items (
+      id SERIAL PRIMARY KEY,
+      item_key TEXT NOT NULL UNIQUE,
+      item_title TEXT,
+      item_category TEXT,
+      source_task TEXT,
+      first_shown_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_shown_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      times_shown INTEGER NOT NULL DEFAULT 1
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_shown_items_key ON shown_items(item_key)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_shown_items_last ON shown_items(last_shown_at DESC)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_shown_items_source ON shown_items(source_task)`;
+
+  // ── Interactions (engagement tracking) ──────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS interactions (
+      id SERIAL PRIMARY KEY,
+      item_key TEXT NOT NULL,
+      interaction_type TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_interactions_key ON interactions(item_key)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_interactions_type ON interactions(interaction_type)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_interactions_created ON interactions(created_at DESC)`;
+
+  // ── Venue Status (open/closed/seasonal) ─────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS venue_status (
+      id SERIAL PRIMARY KEY,
+      venue_name TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'open',
+      operating_days JSONB NOT NULL DEFAULT '[]',
+      notes TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_venue_status_name ON venue_status(venue_name)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_venue_status_status ON venue_status(status)`;
+
+  // Seed venue status
+  await sql`
+    INSERT INTO venue_status (venue_name, status, notes)
+    VALUES ('Dalston Roof Park', 'permanently_closed', 'Permanently closed venue')
+    ON CONFLICT (venue_name) DO NOTHING
+  `;
+  await sql`
+    INSERT INTO venue_status (venue_name, status, operating_days, notes)
+    VALUES ('Columbia Road Flower Market', 'open', '["sunday"]', 'Sunday-only flower market')
+    ON CONFLICT (venue_name) DO NOTHING
+  `;
+
+  // ── UNESCO Sites ────────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS unesco_sites (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      country TEXT NOT NULL,
+      region TEXT,
+      year_inscribed INTEGER,
+      category TEXT NOT NULL DEFAULT 'Cultural',
+      lat DOUBLE PRECISION,
+      lng DOUBLE PRECISION,
+      description TEXT,
+      image_url TEXT,
+      unesco_url TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_country ON unesco_sites(country)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_region ON unesco_sites(region)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_category ON unesco_sites(category)`;
+
+  // ── UNESCO Visits ───────────────────────────────────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS unesco_visits (
+      id SERIAL PRIMARY KEY,
+      site_id INTEGER NOT NULL REFERENCES unesco_sites(id) ON DELETE CASCADE,
+      visited_date DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(site_id)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_unesco_visits_site ON unesco_visits(site_id)`;
 }
 
 // ── Brief Impressions helpers ────────────────────────────
@@ -1019,4 +1109,363 @@ export async function resetBriefImpression(
     DELETE FROM brief_impressions
     WHERE item_id = ${itemId} AND item_type = ${itemType}
   `;
+}
+
+// ── Shown Items (cooldown/rotation) ──────────────────────
+
+export interface ShownItemRow {
+  id: number;
+  item_key: string;
+  item_title: string | null;
+  item_category: string | null;
+  source_task: string | null;
+  first_shown_at: string;
+  last_shown_at: string;
+  times_shown: number;
+}
+
+export async function logShownItem(item: {
+  item_key: string;
+  item_title?: string;
+  item_category?: string;
+  source_task?: string;
+}): Promise<ShownItemRow> {
+  const result = await sql`
+    INSERT INTO shown_items (item_key, item_title, item_category, source_task)
+    VALUES (${item.item_key}, ${item.item_title || null}, ${item.item_category || null}, ${item.source_task || null})
+    ON CONFLICT (item_key)
+    DO UPDATE SET
+      last_shown_at = NOW(),
+      times_shown = shown_items.times_shown + 1,
+      item_title = COALESCE(EXCLUDED.item_title, shown_items.item_title),
+      item_category = COALESCE(EXCLUDED.item_category, shown_items.item_category),
+      source_task = COALESCE(EXCLUDED.source_task, shown_items.source_task)
+    RETURNING *
+  `;
+  return result.rows[0] as ShownItemRow;
+}
+
+export async function getShownItems(opts?: {
+  since?: string;
+  source?: string;
+}): Promise<ShownItemRow[]> {
+  if (opts?.since && opts?.source) {
+    const sinceDate = parseSinceDuration(opts.since);
+    const result = await sql`
+      SELECT * FROM shown_items
+      WHERE last_shown_at >= ${sinceDate} AND source_task = ${opts.source}
+      ORDER BY last_shown_at DESC
+    `;
+    return result.rows as ShownItemRow[];
+  }
+  if (opts?.since) {
+    const sinceDate = parseSinceDuration(opts.since);
+    const result = await sql`
+      SELECT * FROM shown_items
+      WHERE last_shown_at >= ${sinceDate}
+      ORDER BY last_shown_at DESC
+    `;
+    return result.rows as ShownItemRow[];
+  }
+  if (opts?.source) {
+    const result = await sql`
+      SELECT * FROM shown_items
+      WHERE source_task = ${opts.source}
+      ORDER BY last_shown_at DESC
+    `;
+    return result.rows as ShownItemRow[];
+  }
+  const result = await sql`SELECT * FROM shown_items ORDER BY last_shown_at DESC`;
+  return result.rows as ShownItemRow[];
+}
+
+/**
+ * Check cooldown status for an item. Returns cooldown info including
+ * whether the item should be suppressed.
+ *
+ * Default cooldowns:
+ * - 7 days default
+ * - 30 days if saved or calendared
+ * - 14 days if dismissed
+ */
+export async function getItemCooldownStatus(itemKey: string): Promise<{
+  shown: ShownItemRow | null;
+  interactions: InteractionRow[];
+  cooldownDays: number;
+  isCoolingDown: boolean;
+}> {
+  const shownResult = await sql`SELECT * FROM shown_items WHERE item_key = ${itemKey} LIMIT 1`;
+  const shown = (shownResult.rows[0] as ShownItemRow) || null;
+
+  const interactionsResult = await sql`
+    SELECT * FROM interactions WHERE item_key = ${itemKey} ORDER BY created_at DESC
+  `;
+  const interactions = interactionsResult.rows as InteractionRow[];
+
+  // Determine cooldown based on interaction types
+  let cooldownDays = 7; // default
+  const types = interactions.map(i => i.interaction_type);
+  if (types.includes('saved') || types.includes('calendared')) {
+    cooldownDays = 30;
+  } else if (types.includes('dismissed')) {
+    cooldownDays = 14;
+  }
+
+  let isCoolingDown = false;
+  if (shown) {
+    const lastShown = new Date(shown.last_shown_at);
+    const cooldownEnd = new Date(lastShown.getTime() + cooldownDays * 86400000);
+    isCoolingDown = new Date() < cooldownEnd;
+  }
+
+  return { shown, interactions, cooldownDays, isCoolingDown };
+}
+
+function parseSinceDuration(since: string): string {
+  const match = since.match(/^(\d+)([dhm])$/);
+  if (!match) return new Date(Date.now() - 7 * 86400000).toISOString();
+  const [, num, unit] = match;
+  const ms = unit === 'd' ? Number(num) * 86400000
+           : unit === 'h' ? Number(num) * 3600000
+           : Number(num) * 60000;
+  return new Date(Date.now() - ms).toISOString();
+}
+
+// ── Interactions ─────────────────────────────────────────
+
+export interface InteractionRow {
+  id: number;
+  item_key: string;
+  interaction_type: string;
+  created_at: string;
+}
+
+export async function logInteraction(item_key: string, interaction_type: string): Promise<InteractionRow> {
+  const result = await sql`
+    INSERT INTO interactions (item_key, interaction_type)
+    VALUES (${item_key}, ${interaction_type})
+    RETURNING *
+  `;
+  return result.rows[0] as InteractionRow;
+}
+
+export async function getInteractions(item_key: string): Promise<InteractionRow[]> {
+  const result = await sql`
+    SELECT * FROM interactions WHERE item_key = ${item_key} ORDER BY created_at DESC
+  `;
+  return result.rows as InteractionRow[];
+}
+
+// ── Venue Status ─────────────────────────────────────────
+
+export interface VenueStatusRow {
+  id: number;
+  venue_name: string;
+  status: string;
+  operating_days: string[];
+  notes: string | null;
+  updated_at: string;
+}
+
+export async function upsertVenueStatus(venue: {
+  venue_name: string;
+  status: string;
+  operating_days?: string[];
+  notes?: string;
+}): Promise<VenueStatusRow> {
+  const days = JSON.stringify(venue.operating_days || []);
+  const result = await sql`
+    INSERT INTO venue_status (venue_name, status, operating_days, notes)
+    VALUES (${venue.venue_name}, ${venue.status}, ${days}, ${venue.notes || null})
+    ON CONFLICT (venue_name)
+    DO UPDATE SET
+      status = EXCLUDED.status,
+      operating_days = EXCLUDED.operating_days,
+      notes = COALESCE(EXCLUDED.notes, venue_status.notes),
+      updated_at = NOW()
+    RETURNING *
+  `;
+  return result.rows[0] as VenueStatusRow;
+}
+
+export async function getVenueStatus(venueName: string): Promise<VenueStatusRow | null> {
+  const result = await sql`SELECT * FROM venue_status WHERE venue_name = ${venueName} LIMIT 1`;
+  return (result.rows[0] as VenueStatusRow) || null;
+}
+
+export async function getBlacklistedVenues(): Promise<VenueStatusRow[]> {
+  const result = await sql`
+    SELECT * FROM venue_status WHERE status = 'permanently_closed' ORDER BY venue_name
+  `;
+  return result.rows as VenueStatusRow[];
+}
+
+export async function getAllVenueStatuses(): Promise<VenueStatusRow[]> {
+  const result = await sql`SELECT * FROM venue_status ORDER BY venue_name`;
+  return result.rows as VenueStatusRow[];
+}
+
+// ── UNESCO Sites ─────────────────────────────────────────
+
+export interface UnescoSiteRow {
+  id: number;
+  name: string;
+  country: string;
+  region: string | null;
+  year_inscribed: number | null;
+  category: string;
+  lat: number | null;
+  lng: number | null;
+  description: string | null;
+  image_url: string | null;
+  unesco_url: string | null;
+  created_at: string;
+}
+
+export async function getUnescoSites(filters?: {
+  country?: string;
+  region?: string;
+  category?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<UnescoSiteRow[]> {
+  const limit = filters?.limit || 200;
+  const offset = filters?.offset || 0;
+
+  if (filters?.search) {
+    const pattern = `%${filters.search}%`;
+    const result = await sql`
+      SELECT * FROM unesco_sites
+      WHERE name ILIKE ${pattern} OR country ILIKE ${pattern}
+      ORDER BY country, name
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return result.rows as UnescoSiteRow[];
+  }
+
+  if (filters?.country && filters?.category) {
+    const result = await sql`
+      SELECT * FROM unesco_sites
+      WHERE country = ${filters.country} AND category = ${filters.category}
+      ORDER BY name
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return result.rows as UnescoSiteRow[];
+  }
+
+  if (filters?.country) {
+    const result = await sql`
+      SELECT * FROM unesco_sites
+      WHERE country = ${filters.country}
+      ORDER BY name
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return result.rows as UnescoSiteRow[];
+  }
+
+  if (filters?.region) {
+    const result = await sql`
+      SELECT * FROM unesco_sites
+      WHERE region = ${filters.region}
+      ORDER BY country, name
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return result.rows as UnescoSiteRow[];
+  }
+
+  if (filters?.category) {
+    const result = await sql`
+      SELECT * FROM unesco_sites
+      WHERE category = ${filters.category}
+      ORDER BY country, name
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return result.rows as UnescoSiteRow[];
+  }
+
+  const result = await sql`
+    SELECT * FROM unesco_sites ORDER BY country, name LIMIT ${limit} OFFSET ${offset}
+  `;
+  return result.rows as UnescoSiteRow[];
+}
+
+export async function getUnescoCountries(): Promise<Array<{ country: string; count: number }>> {
+  const result = await sql`
+    SELECT country, COUNT(*) as count
+    FROM unesco_sites
+    GROUP BY country
+    ORDER BY country
+  `;
+  return result.rows as Array<{ country: string; count: number }>;
+}
+
+export async function getUnescoSiteById(id: number): Promise<UnescoSiteRow | null> {
+  const result = await sql`SELECT * FROM unesco_sites WHERE id = ${id} LIMIT 1`;
+  return (result.rows[0] as UnescoSiteRow) || null;
+}
+
+export async function getUnescoTotalCount(): Promise<number> {
+  const result = await sql`SELECT COUNT(*) as count FROM unesco_sites`;
+  return Number((result.rows[0] as { count: string }).count);
+}
+
+// ── UNESCO Visits ────────────────────────────────────────
+
+export interface UnescoVisitRow {
+  id: number;
+  site_id: number;
+  visited_date: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export async function getUnescoVisits(): Promise<UnescoVisitRow[]> {
+  const result = await sql`SELECT * FROM unesco_visits ORDER BY created_at DESC`;
+  return result.rows as UnescoVisitRow[];
+}
+
+export async function upsertUnescoVisit(visit: {
+  site_id: number;
+  visited_date?: string;
+  notes?: string;
+}): Promise<UnescoVisitRow> {
+  const result = await sql`
+    INSERT INTO unesco_visits (site_id, visited_date, notes)
+    VALUES (${visit.site_id}, ${visit.visited_date || null}, ${visit.notes || null})
+    ON CONFLICT (site_id)
+    DO UPDATE SET
+      visited_date = COALESCE(EXCLUDED.visited_date, unesco_visits.visited_date),
+      notes = COALESCE(EXCLUDED.notes, unesco_visits.notes)
+    RETURNING *
+  `;
+  return result.rows[0] as UnescoVisitRow;
+}
+
+export async function deleteUnescoVisit(id: number): Promise<boolean> {
+  const result = await sql`DELETE FROM unesco_visits WHERE id = ${id}`;
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function getVisitedSiteIds(): Promise<Set<number>> {
+  const result = await sql`SELECT site_id FROM unesco_visits`;
+  return new Set(result.rows.map(r => (r as { site_id: number }).site_id));
+}
+
+export async function getUnescoCountriesWithVisits(): Promise<Array<{
+  country: string;
+  total: number;
+  visited: number;
+}>> {
+  const result = await sql`
+    SELECT
+      s.country,
+      COUNT(s.id) as total,
+      COUNT(v.id) as visited
+    FROM unesco_sites s
+    LEFT JOIN unesco_visits v ON v.site_id = s.id
+    GROUP BY s.country
+    ORDER BY s.country
+  `;
+  return result.rows as Array<{ country: string; total: number; visited: number }>;
 }
