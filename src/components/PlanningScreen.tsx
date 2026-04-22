@@ -1332,7 +1332,7 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
             )}
 
             {/* Day-by-day suggestions — responsive grid: 1 col mobile, 7 col on lg+ */}
-            <div className="mt-2 lg:grid lg:grid-cols-7 lg:gap-x-3">
+            <div className="mt-2 planner-days-scroll">
             {dates.map(date => {
               const dateKey = formatDate(date);
               // Which morning/afternoon/evening buckets should render for this day.

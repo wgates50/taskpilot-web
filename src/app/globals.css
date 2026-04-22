@@ -1048,3 +1048,46 @@ textarea.tp-input {
   min-height: 72px;
   resize: vertical;
 }
+
+
+/* ============================================================
+   Planner day strip — Wave 2 S3
+   ============================================================ */
+
+/* Horizontal scroll strip. Each direct child becomes a fixed-width
+   column so day content is no longer cropped to the first few letters
+   the 7-col grid was giving it. Today + a few days visible; swipe/
+   scroll for the rest. Uses scroll-snap so the strip settles on a
+   day boundary rather than mid-card. */
+.planner-days-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0 4px 10px;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: 4px;
+  /* Hide the scroll track chrome in Firefox / WebKit without killing
+     wheel + trackpad scrolling. */
+  scrollbar-width: thin;
+}
+.planner-days-scroll::-webkit-scrollbar { height: 8px; }
+.planner-days-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+.planner-days-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.planner-days-scroll > * {
+  flex: 0 0 280px;
+  width: 280px;
+  max-width: 280px;
+  scroll-snap-align: start;
+}
+
+/* Slightly wider days when the planner is embedded inside the Calendar
+   tab — the column has more room there, so we can let each day breathe. */
+@media (min-width: 900px) {
+  .planner-days-scroll > * { flex-basis: 300px; width: 300px; max-width: 300px; }
+}
