@@ -682,3 +682,293 @@ html[data-theme="dark"] .react-btn.down.active { color: oklch(0.75 0.15 25);  ba
 .reading-topic-chip.active {
   background: var(--text); color: var(--bg); border-color: var(--text);
 }
+
+/* ============================================================
+   Calendar — redesign Session 2
+   ============================================================ */
+.mode-switch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  padding: 3px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  gap: 2px;
+}
+.mode-switch button {
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  letter-spacing: -0.005em;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.mode-switch button.active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.week-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.week-nav .label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 140px;
+  text-align: center;
+}
+
+.day-group { margin-bottom: 24px; }
+.day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 6px;
+}
+.day-num {
+  font-size: 22px; font-weight: 500;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+html[data-direction="things"] .day-num { font-family: var(--font-serif); font-weight: 400; }
+.day-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.day-sub {
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--text-3); margin-left: auto;
+  letter-spacing: 0.02em;
+}
+.day-group.today .day-num,
+.day-group.today .day-name { color: var(--accent); }
+.day-group.past { opacity: 0.55; }
+
+.empty-day {
+  font-size: 11.5px; color: var(--text-4);
+  font-family: var(--font-mono); padding: 6px 0;
+}
+
+/* Richer event card — planner day-group variant */
+.event-card {
+  display: grid;
+  grid-template-columns: 68px 1fr;
+  gap: 14px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--line);
+  align-items: flex-start;
+}
+.event-card:last-child { border-bottom: 0; }
+.event-card .reason {
+  font-size: 11.5px; color: var(--text-2);
+  font-style: italic; margin-top: 4px;
+  line-height: 1.4;
+  border-left: 2px solid var(--accent-weak);
+  padding-left: 8px;
+}
+html[data-direction="things"] .event-card .reason {
+  font-family: var(--font-serif); font-style: italic;
+}
+.event-card .actions {
+  display: flex; gap: 6px;
+  margin-top: 8px; flex-wrap: wrap;
+}
+
+/* Week grid view (personal calendar) */
+.week-grid-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  overflow: hidden;
+}
+.week-grid-head {
+  display: grid;
+  grid-template-columns: 54px repeat(7, 1fr);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.week-grid-head-cell {
+  padding: 10px 8px;
+  text-align: left;
+  border-left: 1px solid var(--line);
+}
+.week-grid-head-cell .wd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.week-grid-head-cell .dn {
+  font-size: 18px; font-weight: 500;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.week-grid-head-cell.today .dn { color: var(--accent); }
+
+.week-grid-allday {
+  display: grid;
+  grid-template-columns: 54px repeat(7, 1fr);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.week-grid-allday-label {
+  font-family: var(--font-mono);
+  font-size: 9px; color: var(--text-4);
+  padding: 8px 8px 0;
+  text-align: right;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.week-grid-allday-cell {
+  border-left: 1px solid var(--line);
+  padding: 4px; min-height: 28px;
+}
+.week-grid-allday-event {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  margin-bottom: 2px;
+}
+
+.week-grid-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: 54px repeat(7, 1fr);
+}
+.week-grid-hour-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-4);
+  padding: 8px 8px 0;
+  text-align: right;
+  border-top: 1px solid var(--line);
+}
+.week-grid-cell {
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  height: 44px;
+  position: relative;
+}
+.week-grid-event {
+  position: absolute; left: 2px; right: 2px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-size: 10.5px;
+  overflow: hidden; line-height: 1.2;
+  cursor: pointer;
+}
+.week-grid-event .wt {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.week-grid-event.suggested {
+  background: var(--surface);
+  border: 1px dashed var(--accent);
+  border-left-style: solid;
+  border-left-width: 2px;
+}
+.week-grid-event .tag {
+  font-family: var(--font-mono);
+  font-size: 9px; opacity: 0.7;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+
+/* ============================================================
+   Settings — redesign Session 2
+   ============================================================ */
+.settings-group { margin-bottom: 24px; }
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.settings-row:last-child { border-bottom: 0; }
+.settings-row .label { font-size: 13px; font-weight: 500; }
+.settings-row .desc {
+  font-size: 11.5px; color: var(--text-3);
+  margin-top: 2px; line-height: 1.4;
+}
+.settings-row .control { margin-left: auto; }
+.settings-row .meta {
+  font-family: var(--font-mono);
+  font-size: 11px; color: var(--text-3);
+  margin-left: auto;
+}
+
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: oklch(0.65 0.15 155);
+  display: inline-block;
+  margin-right: 6px;
+}
+.status-dot.off { background: var(--text-4); }
+
+.connection {
+  display: flex; align-items: center;
+  gap: 12px; padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface);
+}
+.connection-body { flex: 1; min-width: 0; }
+.connection-title { font-size: 13px; font-weight: 500; }
+.connection-sub {
+  font-size: 11px; color: var(--text-3);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  display: flex; align-items: center;
+}
+
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  overflow: hidden;
+}
+@media (min-width: 640px) {
+  .stats-strip { grid-template-columns: repeat(4, 1fr); }
+}
+.stat-cell { background: var(--surface); padding: 14px 16px; }
+.stat-cell .n {
+  font-size: 22px; font-weight: 500;
+  letter-spacing: -0.025em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+html[data-direction="things"] .stat-cell .n {
+  font-family: var(--font-serif); font-weight: 400;
+}
+.stat-cell .l {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3); margin-top: 4px;
+}
