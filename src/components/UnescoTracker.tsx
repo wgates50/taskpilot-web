@@ -328,6 +328,12 @@ export function UnescoTracker() {
   const [totalSites, setTotalSites] = useState(0);
   const [visitedCount, setVisitedCount] = useState(0);
   const [regions, setRegions] = useState<string[]>([]);
+  // Track whether the initial fetch failed at the network/API level so we
+  // can show a proper "couldn't load" empty state instead of the previous
+  // developer-facing "Run the seed script" copy, which users read as an
+  // error prompt.
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
 
   const [filterRegion, setFilterRegion] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
@@ -345,6 +351,7 @@ export function UnescoTracker() {
 
   const fetchSites = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const params = new URLSearchParams({ limit: '2000', offset: '0' });
       if (filterRegion) params.set('region', filterRegion);
@@ -352,7 +359,9 @@ export function UnescoTracker() {
       if (debouncedSearch) params.set('search', debouncedSearch);
 
       const res = await fetch(`/api/unesco/sites?${params}`);
-      if (!res.ok) throw new Error('Failed');
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
 
       let fetchedSites: UnescoSite[] = data.sites || [];
@@ -365,10 +374,28 @@ export function UnescoTracker() {
       if (data.filters?.regions) setRegions(data.filters.regions);
     } catch (e) {
       console.error('Failed to fetch UNESCO sites:', e);
+      setFetchError(e instanceof Error ? e.message : 'unknown');
     } finally {
       setLoading(false);
     }
   }, [filterRegion, filterCategory, filterVisited, debouncedSearch]);
+
+  const seedUnesco = useCallback(async () => {
+    if (seeding) return;
+    setSeeding(true);
+    try {
+      const res = await fetch('/api/unesco/seed', { method: 'POST' });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      await fetchSites();
+    } catch (e) {
+      console.error('Failed to seed UNESCO data:', e);
+      setFetchError(e instanceof Error ? e.message : 'seed failed');
+    } finally {
+      setSeeding(false);
+    }
+  }, [seeding, fetchSites]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -638,11 +665,37 @@ export function UnescoTracker() {
           </>
         ) : countrySummaries.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-[13px] text-gray-400">
-              {totalSites === 0
-                ? 'No sites loaded yet. Run the seed script to import UNESCO data.'
-                : 'No countries match your filters.'}
-            </p>
+            {fetchError ? (
+              <>
+                <p className="text-[13px] text-gray-500 mb-3">
+                  Couldn&apos;t load UNESCO sites.
+                </p>
+                <button
+                  onClick={fetchSites}
+                  className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
+                >
+                  Try again
+                </button>
+              </>
+            ) : totalSites === 0 ? (
+              <>
+                <p className="text-[13px] text-gray-500 mb-1">
+                  No UNESCO sites yet.
+                </p>
+                <p className="text-[12px] text-gray-400 mb-3">
+                  Import the full World Heritage list to start tracking.
+                </p>
+                <button
+                  onClick={seedUnesco}
+                  disabled={seeding}
+                  className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-60"
+                >
+                  {seeding ? 'Importing…' : 'Import UNESCO sites'}
+                </button>
+              </>
+            ) : (
+              <p className="text-[13px] text-gray-400">No countries match your filters.</p>
+            )}
           </div>
         ) : (
           countrySummaries.map(c => (
