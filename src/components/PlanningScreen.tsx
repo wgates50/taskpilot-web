@@ -198,13 +198,6 @@ function titleCase(s: string): string {
   return s.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-const COMPANION_OPTIONS = [
-  { mode: 'solo', label: 'Solo', icon: '👤' },
-  { mode: 'partner', label: 'Partner', icon: '💑' },
-  { mode: 'friends', label: 'Friends', icon: '👥' },
-  { mode: 'family', label: 'Family', icon: '👨‍👩‍👧' },
-];
-
 // WMO weather codes → readable conditions
 const WEATHER_SUNNY = new Set([0, 1]); // clear, mainly clear
 const WEATHER_RAINY = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99]);
@@ -633,8 +626,6 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
   const [context, setContext] = useState<UserContext>({});
   const [loading, setLoading] = useState(true);
   const [rescoring, setRescoring] = useState(false);
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [gpsStatus, setGpsStatus] = useState<'waiting' | 'active' | 'denied'>('waiting');
   const [calendarAdding, setCalendarAdding] = useState<string | null>(null);
   const [dismissedBonusKeys, setDismissedBonusKeys] = useState<Set<string>>(new Set());
   // Place IDs the user has dismissed somewhere in the visible window.
@@ -722,11 +713,11 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
     });
   }, []);
 
-  // GPS integration
+  // GPS integration — location is auto-detected in the background and
+  // persisted to /api/context. The Wave 2 redesign dropped the visible
+  // GPS-status chip, so we no longer track a local status state here.
   const handleGeoUpdate = useCallback(async (lat: number, lng: number, area: string) => {
-    setGpsStatus('active');
     setContext(prev => ({ ...prev, location: { area, lat, lng } }));
-    // Persist to server
     try {
       await fetch('/api/context', {
         method: 'PUT',
@@ -740,19 +731,9 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
 
   useGeoLocation(handleGeoUpdate);
 
-  // Listen for GPS denial
-  useEffect(() => {
-    const handler = () => setGpsStatus('denied');
-    window.addEventListener('gps-denied', handler);
-    return () => window.removeEventListener('gps-denied', handler);
-  }, []);
-
-  // Fetch weather on mount and when location changes
-  useEffect(() => {
-    const lat = context.location?.lat ?? 51.5235;
-    const lng = context.location?.lng ?? -0.0775;
-    fetchWeather(lat, lng).then(setWeather);
-  }, [context.location?.lat, context.location?.lng]);
+  // Weather is fetched on-demand inside fetchData / suggestNow where it's
+  // actually consumed for scoring — we no longer need to hold it in state
+  // since the Wave 2 redesign removed the context-bar weather chip.
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -840,8 +821,6 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
         fetch('/api/places?limit=500'),
         fetchWeather(lat, lng),
       ]);
-
-      setWeather(freshWeather);
 
       if (!placesRes.ok) {
         // Fall back to just refreshing from server
@@ -1125,19 +1104,6 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const updateContext = async (key: string, value: unknown) => {
-    try {
-      await fetch('/api/context', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, value }),
-      });
-      setContext(prev => ({ ...prev, [key]: value }));
-    } catch (err) {
-      console.error('Context update failed:', err);
-    }
-  };
-
   const pendingReviews = reviews.filter(r => r.status === 'pending');
   // Dedupe events that appear in multiple calendars (e.g. the same gig lives
   // in both the primary calendar AND the London What's On calendar, yielding
@@ -1243,63 +1209,10 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
           </div>
         ) : (
           <>
-            {/* Context panel */}
-            <div className="mt-4 p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Context</span>
-                {weather && (
-                  <span className="text-xs text-gray-500">
-                    {weather.isRainy ? '🌧' : weather.isSunny ? '☀️' : '⛅'} {Math.round(weather.temp)}°C
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm">📍</span>
-                <span className="text-sm text-gray-700">{context.location?.area || 'Shoreditch'}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                  gpsStatus === 'active' ? 'bg-green-100 text-green-600' :
-                  gpsStatus === 'denied' ? 'bg-red-100 text-red-600' :
-                  'bg-gray-100 text-gray-500'
-                }`}>
-                  {gpsStatus === 'active' ? 'GPS' : gpsStatus === 'denied' ? 'No GPS' : 'auto'}
-                </span>
-              </div>
-              <div className="flex gap-1.5 flex-wrap">
-                {COMPANION_OPTIONS.map(opt => (
-                  <button
-                    key={opt.mode}
-                    onClick={() => {
-                      updateContext('companions', { mode: opt.mode, detail: null });
-                      // Auto-rescore with new companion mode after a short delay
-                      // so the context update has time to propagate
-                      setTimeout(() => handleRescore(), 300);
-                    }}
-                    title={`Set companion mode to ${opt.label} — rescores suggestions`}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                      context.companions?.mode === opt.mode
-                        ? 'border border-blue-200 bg-blue-50 text-blue-700'
-                        : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span>{opt.icon}</span>
-                    <span>{opt.label}</span>
-                  </button>
-                ))}
-                {/* Working week toggle */}
-                <button
-                  onClick={() => updateContext('working_week_mode', !context.working_week_mode)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ml-auto ${
-                    context.working_week_mode
-                      ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
-                      : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
-                  }`}
-                  title={context.working_week_mode ? 'Work mode ON — hides 8am–5pm slots on weekdays (you\u2019re at work)' : 'Enable work mode — only show after-5pm picks on weekdays'}
-                >
-                  <span>{context.working_week_mode ? '💼' : '💼'}</span>
-                  <span>Work mode</span>
-                </button>
-              </div>
-            </div>
+            {/* Context bar removed in Wave 2 — GPS auto-detects location in the
+                background via useGeoLocation above, and the work-mode toggle
+                moved to Settings → Preferences. Weather is still shown
+                contextually on suggestion cards. */}
 
             {/* Visit reviews */}
             {pendingReviews.length > 0 && (
