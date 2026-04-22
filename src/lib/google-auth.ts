@@ -211,3 +211,92 @@ export async function getConnectionStatus(): Promise<{
     expiresAt: tokens.expires_at,
   };
 }
+
+// ── Listing, updating, deleting calendar events ──────────
+
+export interface CalendarItem {
+  id: string;
+  summary: string;
+  location?: string;
+  description?: string;
+  start: { dateTime?: string; date?: string; timeZone?: string };
+  end: { dateTime?: string; date?: string; timeZone?: string };
+  htmlLink?: string;
+  status?: string;
+  organizer?: { self?: boolean; email?: string };
+  creator?: { self?: boolean; email?: string };
+  attendees?: Array<{ email?: string; self?: boolean; responseStatus?: string }>;
+  recurringEventId?: string;
+  transparency?: string;      // "transparent" = free (non-blocking)
+  eventType?: string;         // "default", "outOfOffice", "focusTime", etc.
+  updated?: string;
+}
+
+/**
+ * List events from the user's primary calendar between two instants.
+ * timeMin / timeMax are ISO strings. singleEvents=true expands recurring
+ * instances so the UI can render them at their actual occurrence times.
+ */
+export async function listCalendarEvents(
+  timeMin: string,
+  timeMax: string,
+): Promise<CalendarItem[]> {
+  const accessToken = await getValidAccessToken();
+  if (!accessToken) throw new Error('NOT_CONNECTED');
+
+  const url = new URL(CALENDAR_EVENTS_URL);
+  url.searchParams.set('timeMin', timeMin);
+  url.searchParams.set('timeMax', timeMax);
+  url.searchParams.set('singleEvents', 'true');
+  url.searchParams.set('orderBy', 'startTime');
+  url.searchParams.set('maxResults', '250');
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Calendar list failed: ${res.status} ${text}`);
+  }
+  const data = await res.json();
+  return (data.items ?? []) as CalendarItem[];
+}
+
+/** PATCH an event in the user's primary calendar. */
+export async function updateCalendarEvent(
+  id: string,
+  patch: Partial<CalendarEventInput>,
+): Promise<CalendarItem> {
+  const accessToken = await getValidAccessToken();
+  if (!accessToken) throw new Error('NOT_CONNECTED');
+
+  const res = await fetch(`${CALENDAR_EVENTS_URL}/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Calendar update failed: ${res.status} ${text}`);
+  }
+  return (await res.json()) as CalendarItem;
+}
+
+/** DELETE an event from the user's primary calendar. */
+export async function deleteCalendarEvent(id: string): Promise<void> {
+  const accessToken = await getValidAccessToken();
+  if (!accessToken) throw new Error('NOT_CONNECTED');
+
+  const res = await fetch(`${CALENDAR_EVENTS_URL}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  // 204 No Content on success; 410 Gone is OK (already deleted).
+  if (!res.ok && res.status !== 410) {
+    const text = await res.text();
+    throw new Error(`Calendar delete failed: ${res.status} ${text}`);
+  }
+}

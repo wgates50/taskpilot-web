@@ -972,3 +972,79 @@ html[data-direction="things"] .stat-cell .n {
   text-transform: uppercase;
   color: var(--text-3); margin-top: 4px;
 }
+
+
+/* ============================================================
+   Calendar — redesign Wave 2
+   ============================================================ */
+
+/* Scroll wrapper inside the week-grid card so the content can scroll
+   vertically while the card keeps its rounded outline. Caps the grid
+   height so it fits on screens where the full 15-hour column would
+   otherwise overflow the layout. */
+.week-grid-scroll {
+  max-height: calc(100vh - 220px);
+  min-height: 420px;
+  overflow-y: auto;
+}
+.week-grid-scroll .week-grid-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+.week-grid-scroll .week-grid-allday {
+  position: sticky;
+  top: 41px;
+  z-index: 2;
+}
+
+/* Muted style for events the user has marked Free / transparent in gcal. */
+.week-grid-event.transparent {
+  background: transparent;
+  border: 1px dashed var(--line-2, var(--line));
+  border-left: 2px solid var(--text-4);
+  color: var(--text-2);
+}
+
+/* Destructive button variant. */
+.tp-btn.danger {
+  color: var(--danger, #b40c2e);
+  border-color: color-mix(in srgb, var(--danger, #b40c2e) 35%, var(--line));
+}
+.tp-btn.danger:hover {
+  background: color-mix(in srgb, var(--danger, #b40c2e) 8%, transparent);
+}
+
+/* Label + input layout used in the event edit sheet. */
+.tp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tp-field > span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tp-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2, 6px);
+  font-family: inherit;
+  line-height: 1.4;
+}
+.tp-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+textarea.tp-input {
+  min-height: 72px;
+  resize: vertical;
+}
