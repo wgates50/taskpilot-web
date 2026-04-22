@@ -96,6 +96,21 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
+    // If the tables don't exist yet (e.g. fresh Vercel DB, or a redeploy onto
+    // a new branch's preview DB), return an empty-state response so the UI
+    // renders its "Import UNESCO sites" button instead of a generic error.
+    // Postgres errcode 42P01 = undefined_table.
+    const pgCode = (err as { code?: string } | null)?.code;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (pgCode === '42P01' || /relation .* does not exist/i.test(msg)) {
+      return NextResponse.json({
+        sites: [],
+        total: 0,
+        visited_count: 0,
+        total_sites: 0,
+        filters: { regions: [], countries: [] },
+      });
+    }
     console.error('GET /api/unesco/sites error:', err);
     return NextResponse.json({ error: 'Failed to fetch UNESCO sites' }, { status: 500 });
   }

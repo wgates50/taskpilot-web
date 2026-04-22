@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
+import { setupDatabase } from '@/lib/db';
 
 /**
  * POST /api/unesco/seed
@@ -102,6 +103,12 @@ async function upsertSite(site: UnescoApiSite): Promise<boolean> {
 
 export async function POST() {
   try {
+    // Ensure the unesco_sites table (and related migrations) exist before we
+    // try to upsert. Without this, a fresh Vercel DB throws "relation
+    // unesco_sites does not exist" and the UI shows a generic "Couldn't load"
+    // error instead of the empty-state Import button.
+    await setupDatabase();
+
     let fromRow = 1;
     let totalInserted = 0;
 

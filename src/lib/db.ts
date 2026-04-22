@@ -1007,22 +1007,27 @@ export async function setupDatabase(): Promise<void> {
   `;
 
   // ── UNESCO Sites ────────────────────────────────────────
+  // Column name is `short_description` to match the seed route,
+  // seed script, UI (UnescoTracker.tsx), and API response shape.
   await sql`
     CREATE TABLE IF NOT EXISTS unesco_sites (
-      id SERIAL PRIMARY KEY,
+      id INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
       country TEXT NOT NULL,
       region TEXT,
       year_inscribed INTEGER,
-      category TEXT NOT NULL DEFAULT 'Cultural',
+      category TEXT NOT NULL DEFAULT 'cultural',
       lat DOUBLE PRECISION,
       lng DOUBLE PRECISION,
-      description TEXT,
+      short_description TEXT,
       image_url TEXT,
       unesco_url TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  // If the old column name ever shipped (pre-rename), keep both around as
+  // a no-op migration. ADD COLUMN IF NOT EXISTS is idempotent.
+  await sql`ALTER TABLE unesco_sites ADD COLUMN IF NOT EXISTS short_description TEXT`;
   await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_country ON unesco_sites(country)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_region ON unesco_sites(region)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_unesco_sites_category ON unesco_sites(category)`;
@@ -1316,7 +1321,7 @@ export interface UnescoSiteRow {
   category: string;
   lat: number | null;
   lng: number | null;
-  description: string | null;
+  short_description: string | null;
   image_url: string | null;
   unesco_url: string | null;
   created_at: string;
