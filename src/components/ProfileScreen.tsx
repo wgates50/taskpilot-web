@@ -2,6 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { TASKS, TASK_GROUPS, type TaskMeta } from '@/lib/tasks';
+import { Icon } from './ui/Icon';
+import { Glyph } from './ui/Glyph';
+import { Switch } from './ui/Switch';
+import { SectionLabel } from './ui/SectionLabel';
+import { usePreferences } from './providers/PreferencesProvider';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -100,148 +105,287 @@ export function ProfileScreen() {
     return <TaskDetailView task={selectedTask} onBack={() => { setSelectedTask(null); setView('home'); }} />;
   }
 
-  // Group active tasks by group
+  return <SettingsHomeView
+    googleStatus={googleStatus}
+    googleBanner={googleBanner}
+    onOpenTasteProfile={() => setView('taste-profile')}
+    onOpenPlacesDB={() => setView('places-db')}
+    onOpenTask={(task) => { setSelectedTask(task); setView('task-detail'); }}
+  />;
+}
+
+// ── Settings Home helpers ───────────────────────────────
+
+function taskInitials(name: string): string {
+  const cleaned = name.replace(/[^a-zA-Z\s]/g, '').trim();
+  const parts = cleaned.split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return cleaned.slice(0, 2).toUpperCase() || 'TK';
+}
+
+// ── Settings Home (new design) ──────────────────────────
+
+function SettingsHomeView({
+  googleStatus,
+  googleBanner,
+  onOpenTasteProfile,
+  onOpenPlacesDB,
+  onOpenTask,
+}: {
+  googleStatus: GoogleStatus | null;
+  googleBanner: string | null;
+  onOpenTasteProfile: () => void;
+  onOpenPlacesDB: () => void;
+  onOpenTask: (task: TaskMeta) => void;
+}) {
+  const prefs = usePreferences();
   const activeTasks = TASKS.filter(t => !t.retired && !t.hideFromThreads);
   const backgroundTasks = TASKS.filter(t => !t.retired && (t.hideFromThreads || t.tier === 'background'));
 
+  // Notification toggles — mirror the design's simple local state.
+  // TODO: wire to /api/profile/preferences once notifications API lands.
+  const [pushOn, setPushOn] = useState(true);
+  const [briefOn, setBriefOn] = useState(true);
+  const [readingOn, setReadingOn] = useState(true);
+  const [discoveryOn, setDiscoveryOn] = useState(true);
+
+  const darkOn = prefs.theme === 'dark';
+
   return (
-    <div className="flex flex-col h-full bg-gray-50">
-      <div className="bg-white border-b px-4 pt-12 lg:pt-4 pb-3 shrink-0">
-        <h1 className="text-xl font-bold text-gray-900">Settings</h1>
-        <p className="text-xs text-gray-400 mt-0.5">Features, connections & preferences</p>
+    <div className="tp-body" style={{ minHeight: '100%' }}>
+      <h1 className="greeting" style={{ fontSize: 24, marginBottom: 4 }}>Settings</h1>
+      <div className="greeting-date" style={{ marginBottom: 24 }}>
+        wgates50@gmail.com · Personal plan
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 lg:px-6 pb-24">
-        {/* Google Calendar banner */}
-        {googleBanner && (
-          <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-[12px] text-blue-700">
-            {googleBanner}
+      {/* Google Calendar OAuth banner */}
+      {googleBanner && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: '10px 14px',
+            background: 'var(--accent-soft)',
+            border: '1px solid var(--accent-weak)',
+            borderRadius: 'var(--r-2)',
+            fontSize: 12.5,
+            color: 'var(--accent)',
+          }}
+        >
+          {googleBanner}
+        </div>
+      )}
+
+      {/* Connections */}
+      <div className="settings-group">
+        <SectionLabel count={2}>Connections</SectionLabel>
+        <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr' }}>
+          <div className="connection">
+            <Glyph mono="GC" tone="f" />
+            <div className="connection-body">
+              <div className="connection-title">Google Calendar</div>
+              <div className="connection-sub">
+                <span className={`status-dot ${googleStatus?.connected ? '' : 'off'}`} />
+                {googleStatus?.connected
+                  ? 'Connected · event sync active'
+                  : 'Not connected'}
+              </div>
+            </div>
+            {googleStatus?.connected ? (
+              <span className="tp-btn sm" style={{ pointerEvents: 'none', color: 'var(--text-3)' }}>
+                Manage
+              </span>
+            ) : (
+              <a className="tp-btn sm accent" href="/api/auth/google/consent">Connect</a>
+            )}
           </div>
-        )}
-
-        {/* Desktop: two-column grid for top sections */}
-        <div className="lg:grid lg:grid-cols-2 lg:gap-6">
-          <div>
-            {/* ── Connections ── */}
-            <SectionHeader label="Connections" />
-            <div className="space-y-1.5">
-              <SettingsRow
-                icon="📅"
-                title="Google Calendar"
-                subtitle={googleStatus?.connected ? 'Connected' : 'Not connected'}
-                trailing={googleStatus?.connected ? (
-                  <span className="text-[11px] text-green-600 font-medium">✓</span>
-                ) : (
-                  <a
-                    href="/api/auth/google/consent"
-                    className="text-[11px] font-medium text-blue-600 border border-blue-200 bg-blue-50 px-3 py-1 rounded-md hover:bg-blue-100 transition-colors"
-                  >
-                    Connect
-                  </a>
-                )}
-              />
+          <div className="connection">
+            <Glyph mono="GM" tone="f" />
+            <div className="connection-body">
+              <div className="connection-title">Gmail</div>
+              <div className="connection-sub">
+                <span className="status-dot" /> Event ingestion via scheduled tasks
+              </div>
             </div>
-
-            {/* ── Data & Preferences ── */}
-            <SectionHeader label="Data & Preferences" />
-            <div className="space-y-1.5">
-              <SettingsRow
-                icon="🎯"
-                title="Taste Profile"
-                subtitle="Interests, venues & evidence log"
-                onClick={() => setView('taste-profile')}
-                trailing={<ChevronRight />}
-              />
-              <SettingsRow
-                icon="📍"
-                title="Places Database"
-                subtitle="290 places — restaurants, cafes, activities"
-                onClick={() => setView('places-db')}
-                trailing={<ChevronRight />}
-              />
-            </div>
-          </div>
-
-          <div>
-            {/* ── Features ── */}
-            <SectionHeader label="Features" />
-            <div className="space-y-1.5">
-              {activeTasks.map(task => (
-                <SettingsRow
-                  key={task.id}
-                  icon={task.icon}
-                  title={task.name}
-                  subtitle={task.schedule}
-                  onClick={() => { setSelectedTask(task); setView('task-detail'); }}
-                  trailing={<ChevronRight />}
-                />
-              ))}
-            </div>
+            <span className="tp-btn sm" style={{ pointerEvents: 'none', color: 'var(--text-3)' }}>
+              Manage
+            </span>
           </div>
         </div>
+      </div>
 
-        {/* Background Pipelines — full width below on desktop */}
-        <SectionHeader label="Background Pipelines" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-1.5">
-          {backgroundTasks.map(task => (
-            <SettingsRow
+      {/* Notifications */}
+      <div className="settings-group">
+        <SectionLabel>Notifications</SectionLabel>
+        <div className="tp-card" style={{ padding: '2px 16px' }}>
+          <div className="settings-row">
+            <div>
+              <div className="label">Push notifications</div>
+              <div className="desc">Morning brief and urgent event closings</div>
+            </div>
+            <div className="control"><Switch on={pushOn} onChange={setPushOn} ariaLabel="Push notifications" /></div>
+          </div>
+          <div className="settings-row">
+            <div>
+              <div className="label">Morning brief</div>
+              <div className="desc">Delivered at 06:00 daily</div>
+            </div>
+            <div className="control"><Switch on={briefOn} onChange={setBriefOn} ariaLabel="Morning brief" /></div>
+          </div>
+          <div className="settings-row">
+            <div>
+              <div className="label">Smart reading digest</div>
+              <div className="desc">Delivered at 12:00 daily</div>
+            </div>
+            <div className="control"><Switch on={readingOn} onChange={setReadingOn} ariaLabel="Smart reading digest" /></div>
+          </div>
+          <div className="settings-row">
+            <div>
+              <div className="label">Discovery mode</div>
+              <div className="desc">Include out-of-profile recommendations</div>
+            </div>
+            <div className="control"><Switch on={discoveryOn} onChange={setDiscoveryOn} ariaLabel="Discovery mode" /></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Preferences */}
+      <div className="settings-group">
+        <SectionLabel>Preferences</SectionLabel>
+        <div className="tp-card" style={{ padding: '2px 16px' }}>
+          <div className="settings-row">
+            <div>
+              <div className="label">Dark mode</div>
+              <div className="desc">Switch to dark theme</div>
+            </div>
+            <div className="control">
+              <Switch on={darkOn} onChange={() => prefs.toggleTheme()} ariaLabel="Dark mode" />
+            </div>
+          </div>
+          <div className="settings-row">
+            <div>
+              <div className="label">Location</div>
+              <div className="desc">Used for weather, commute and what&apos;s on</div>
+            </div>
+            <span className="meta">London, UK</span>
+          </div>
+          <div className="settings-row">
+            <div>
+              <div className="label">Working hours</div>
+              <div className="desc">Respected when scheduling suggestions</div>
+            </div>
+            <span className="meta">09:00 — 18:00</span>
+          </div>
+          <div className="settings-row">
+            <div>
+              <div className="label">Currency</div>
+            </div>
+            <span className="meta">GBP</span>
+          </div>
+          <div className="settings-row">
+            <div>
+              <div className="label">Start of week</div>
+            </div>
+            <span className="meta">Monday</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced — Taste Profile / Places DB / Features / Pipelines */}
+      <div className="settings-group">
+        <SectionLabel count={2}>Data</SectionLabel>
+        <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr' }}>
+          <div className="connection" role="button" onClick={onOpenTasteProfile} style={{ cursor: 'pointer' }}>
+            <Glyph mono="TP" tone="a" />
+            <div className="connection-body">
+              <div className="connection-title">Taste Profile</div>
+              <div className="connection-sub">Interests, venues &amp; evidence log</div>
+            </div>
+            <Icon name="chevronRight" size={14} />
+          </div>
+          <div className="connection" role="button" onClick={onOpenPlacesDB} style={{ cursor: 'pointer' }}>
+            <Glyph mono="PL" tone="c" />
+            <div className="connection-body">
+              <div className="connection-title">Places database</div>
+              <div className="connection-sub">290 places — restaurants, cafes, activities</div>
+            </div>
+            <Icon name="chevronRight" size={14} />
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <SectionLabel count={activeTasks.length}>Scheduled tasks</SectionLabel>
+        <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr' }}>
+          {activeTasks.map(task => (
+            <div
               key={task.id}
-              icon={task.icon}
-              title={task.name}
-              subtitle={task.schedule}
-              onClick={() => { setSelectedTask(task); setView('task-detail'); }}
-              trailing={<ChevronRight />}
-            />
+              className="connection"
+              role="button"
+              onClick={() => onOpenTask(task)}
+              style={{ cursor: 'pointer' }}
+            >
+              <Glyph mono={taskInitials(task.name)} tone="d" />
+              <div className="connection-body">
+                <div className="connection-title">{task.name}</div>
+                <div className="connection-sub">{task.schedule}</div>
+              </div>
+              <Icon name="chevronRight" size={14} />
+            </div>
           ))}
         </div>
+      </div>
+
+      {backgroundTasks.length > 0 && (
+        <div className="settings-group">
+          <SectionLabel count={backgroundTasks.length}>Background pipelines</SectionLabel>
+          <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr' }}>
+            {backgroundTasks.map(task => (
+              <div
+                key={task.id}
+                className="connection"
+                role="button"
+                onClick={() => onOpenTask(task)}
+                style={{ cursor: 'pointer' }}
+              >
+                <Glyph mono={taskInitials(task.name)} tone="f" />
+                <div className="connection-body">
+                  <div className="connection-title">{task.name}</div>
+                  <div className="connection-sub">{task.schedule}</div>
+                </div>
+                <Icon name="chevronRight" size={14} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Data actions */}
+      <div className="settings-group">
+        <SectionLabel>Account</SectionLabel>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="tp-btn sm">Export all data</button>
+          <button className="tp-btn sm">Clear cached events</button>
+        </div>
+      </div>
+
+      <div
+        className="mono"
+        style={{
+          marginTop: 40,
+          fontSize: 10.5,
+          color: 'var(--text-4)',
+          textAlign: 'center',
+        }}
+      >
+        TASKPILOT · REDESIGN BUILD · LONDON
       </div>
     </div>
   );
 }
 
 // ── Shared UI ────────────────────────────────────────────
-
-function SectionHeader({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2 mt-5 mb-2">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
-        {label}
-      </p>
-      <div className="flex-1 h-px bg-gray-200" />
-    </div>
-  );
-}
-
-function SettingsRow({
-  icon,
-  title,
-  subtitle,
-  onClick,
-  trailing,
-}: {
-  icon: string;
-  title: string;
-  subtitle: string;
-  onClick?: () => void;
-  trailing?: React.ReactNode;
-}) {
-  const Tag = onClick ? 'button' : 'div';
-  return (
-    <Tag
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-3.5 py-3 shadow-sm ${
-        onClick ? 'hover:bg-gray-50 active:bg-gray-100 transition-colors text-left' : ''
-      }`}
-    >
-      <span className="text-lg shrink-0">{icon}</span>
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-semibold text-gray-900 truncate">{title}</p>
-        <p className="text-[11px] text-gray-400 truncate">{subtitle}</p>
-      </div>
-      {trailing && <div className="shrink-0">{trailing}</div>}
-    </Tag>
-  );
-}
 
 function BackButton({ onBack }: { onBack: () => void }) {
   return (
@@ -251,14 +395,6 @@ function BackButton({ onBack }: { onBack: () => void }) {
       </svg>
       Back
     </button>
-  );
-}
-
-function ChevronRight() {
-  return (
-    <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-    </svg>
   );
 }
 

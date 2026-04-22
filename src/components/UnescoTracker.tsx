@@ -334,7 +334,7 @@ export function UnescoTracker() {
   const [filterVisited, setFilterVisited] = useState<'all' | 'visited' | 'unvisited'>('all');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const [view, setView] = useState<View>('countries');
   const [selectedCountry, setSelectedCountry] = useState('');
