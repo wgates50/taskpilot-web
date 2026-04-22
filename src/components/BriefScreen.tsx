@@ -238,54 +238,73 @@ interface ArticleData {
 }
 
 // ── Worth noting (Wave 2) ───────────────────────────────
-// Expanded replacement for the old "Worth Knowing" section. Aggregates
-// email/admin notes from the morning-brief skill, recent reading discoveries,
-// and rotating picks from the places DB.
+// Flagged emails from the morning-brief skill. Preferred shape is a
+// structured inbox_item block per email; falls back to a legacy concatenated
+// text blob if the scheduled task hasn't been upgraded yet.
 
-interface PlacePick {
-  id: string;
-  name: string;
-  category?: string;
-  area?: string;
-  cuisine_tags?: string[];
-  vibe_tags?: string[];
-  // Postgres NUMERIC returns as a string via @vercel/postgres. Accept both.
-  google_rating?: number | string | null;
-  google_maps_url?: string;
-  website?: string;
-}
-
-function ratingNumber(v: number | string | null | undefined): number | null {
-  if (v === null || v === undefined) return null;
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? n : null;
+interface InboxItem {
+  from?: string;
+  subject?: string;
+  reason?: string;   // why it matters
+  gmailUrl?: string; // optional deep-link to the thread
 }
 
 function WorthNoting({
-  emailTexts,
-  readingPicks,
-  placesPicks,
+  items,
+  legacyTexts,
   loading,
 }: {
-  emailTexts: string[];
-  readingPicks: ArticleData[];
-  placesPicks: PlacePick[];
+  items: InboxItem[];
+  legacyTexts: string[];
   loading: boolean;
 }) {
-  const hasAny = emailTexts.length > 0 || readingPicks.length > 0 || placesPicks.length > 0;
+  const hasAny = items.length > 0 || legacyTexts.length > 0;
   if (!hasAny && !loading) return null;
 
   return (
     <>
-      <SectionLabel>Worth noting</SectionLabel>
-      <div className="tp-card" style={{ padding: 0, overflow: 'hidden' }}>
-        {/* Admin / email notes from the morning-brief skill */}
-        {emailTexts.length > 0 && (
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 6 }}>
-              From your inbox
-            </div>
-            {emailTexts.map((t, i) => (
+      <SectionLabel count={items.length || undefined}>Worth noting</SectionLabel>
+      <div className="tp-card popout" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px 8px' }}>
+          <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--text-3)' }}>
+            From your inbox
+          </div>
+        </div>
+
+        {items.map((it, i) => {
+          const open = () => it.gmailUrl && window.open(it.gmailUrl, '_blank', 'noopener,noreferrer');
+          const clickable = Boolean(it.gmailUrl);
+          return (
+            <button
+              key={i}
+              onClick={open}
+              type="button"
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', background: 'transparent',
+                border: 0, borderTop: '1px solid var(--line)', padding: '12px 16px',
+                cursor: clickable ? 'pointer' : 'default', color: 'inherit',
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, marginBottom: 2 }}>
+                {it.from || 'Unknown sender'}
+              </div>
+              {it.subject && (
+                <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.4, marginBottom: it.reason ? 4 : 0 }}>
+                  {it.subject}
+                </div>
+              )}
+              {it.reason && (
+                <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45, fontStyle: 'italic' }}>
+                  {it.reason}
+                </div>
+              )}
+            </button>
+          );
+        })}
+
+        {items.length === 0 && legacyTexts.length > 0 && (
+          <div style={{ padding: '0 16px 14px' }}>
+            {legacyTexts.map((t, i) => (
               <div
                 key={i}
                 style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, whiteSpace: 'pre-line', marginTop: i === 0 ? 0 : 10 }}
@@ -293,69 +312,6 @@ function WorthNoting({
                 {t}
               </div>
             ))}
-          </div>
-        )}
-
-        {/* Reading discoveries */}
-        {readingPicks.length > 0 && (
-          <div style={{ padding: '14px 16px', borderBottom: placesPicks.length > 0 ? '1px solid var(--line)' : 0 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>
-              Discoveries to read
-            </div>
-            {readingPicks.map((a, i) => {
-              const open = () => a.url && window.open(a.url, '_blank', 'noopener,noreferrer');
-              return (
-                <button
-                  key={i}
-                  onClick={open}
-                  type="button"
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 0,
-                    padding: i === 0 ? '2px 0' : '8px 0 2px', cursor: a.url ? 'pointer' : 'default', color: 'inherit',
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{a.title || 'Untitled'}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
-                    {a.source && <span><b>{a.source}</b></span>}
-                    {a.minutes !== undefined && <span> · {a.minutes} min</span>}
-                    {(a.readingTimeMinutes !== undefined && a.minutes === undefined) && <span> · {a.readingTimeMinutes} min</span>}
-                    {a.topic && <span> · {a.topic}</span>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Places worth a revisit / seasonal */}
-        {placesPicks.length > 0 && (
-          <div style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>
-              Places on the radar
-            </div>
-            {placesPicks.map((p, i) => {
-              const url = p.google_maps_url || p.website;
-              const open = () => url && window.open(url, '_blank', 'noopener,noreferrer');
-              const tags = [p.area, p.category, ...(p.cuisine_tags ?? []).slice(0, 2)].filter(Boolean).join(' · ');
-              const rating = ratingNumber(p.google_rating);
-              return (
-                <button
-                  key={p.id}
-                  onClick={open}
-                  type="button"
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 0,
-                    padding: i === 0 ? '2px 0' : '8px 0 2px', cursor: url ? 'pointer' : 'default', color: 'inherit',
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{p.name}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
-                    {tags}
-                    {rating !== null && <span> · ★ {rating.toFixed(1)}</span>}
-                  </div>
-                </button>
-              );
-            })}
           </div>
         )}
 
@@ -400,23 +356,16 @@ function ArticleRow({ article, index }: { article: ArticleData; index: number })
 export function BriefScreen() {
   const [briefMsg, setBriefMsg] = useState<MessageRow | null>(null);
   const [readingMsg, setReadingMsg] = useState<MessageRow | null>(null);
-  const [placesPicks, setPlacesPicks] = useState<PlacePick[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchAll = useCallback(async () => {
-    const [briefRes, readingRes, placesRes] = await Promise.all([
+    const [briefRes, readingRes] = await Promise.all([
       fetch('/api/messages?taskId=morning-brief&limit=1').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       fetch('/api/messages?taskId=smart-reading-digest&limit=1').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      fetch('/api/places?limit=50').then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     setBriefMsg(briefRes?.messages?.[0] ?? null);
     setReadingMsg(readingRes?.messages?.[0] ?? null);
-    // Rotate 3 random places each load to keep "worth noting" feeling fresh.
-    const allPlaces: PlacePick[] = placesRes?.places ?? [];
-    const enriched = allPlaces.filter((p) => p.name && (p.google_rating || p.website || p.google_maps_url));
-    const shuffled = [...enriched].sort(() => Math.random() - 0.5).slice(0, 3);
-    setPlacesPicks(shuffled);
   }, []);
 
   useEffect(() => {
@@ -439,6 +388,7 @@ export function BriefScreen() {
   const briefSections: { header: string; texts: string[] }[] = [];
   const standaloneTexts: string[] = [];
   const worthNotingTexts: string[] = [];
+  const inboxItems: InboxItem[] = [];
   let currentSection: { header: string; texts: string[] } | null = null;
   let skipCurrentSection = false;
   let currentIsWorthNoting = false;
@@ -491,6 +441,17 @@ export function BriefScreen() {
         else standaloneTexts.push(text);
         break;
       }
+      case 'inbox_item': {
+        // Structured email item from the upgraded morning-brief skill.
+        const item: InboxItem = {
+          from: data.from ? String(data.from) : undefined,
+          subject: data.subject ? String(data.subject) : undefined,
+          reason: data.reason ? String(data.reason) : undefined,
+          gmailUrl: data.gmailUrl ? String(data.gmailUrl) : undefined,
+        };
+        if (item.from || item.subject || item.reason) inboxItems.push(item);
+        break;
+      }
       default:
         break;
     }
@@ -507,8 +468,6 @@ export function BriefScreen() {
 
   const articleBlocks = (readingMsg?.blocks ?? []).filter((b) => b.type === 'article_card');
   const articles = articleBlocks.map((b) => (b.data ?? b) as ArticleData);
-  // Discovery picks feed Worth noting; cap at 3 to keep the card scan-able.
-  const readingPicks = articles.filter((a) => a.isDiscovery).slice(0, 3);
 
   const now = new Date();
 
@@ -562,15 +521,15 @@ export function BriefScreen() {
           >
             Today
           </SectionLabel>
-          <div className="tp-card flat">
+          <div className="tp-card popout" style={{ padding: '4px 16px' }}>
             {loading ? (
-              <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>Loading…</div>
+              <div style={{ padding: '20px 0', color: 'var(--text-3)', fontSize: 13 }}>Loading…</div>
             ) : !calendarPreview ? (
-              <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>
+              <div style={{ padding: '20px 0', color: 'var(--text-3)', fontSize: 13 }}>
                 No calendar preview in today&rsquo;s brief.
               </div>
             ) : todayEvents.length === 0 ? (
-              <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>
+              <div style={{ padding: '20px 0', color: 'var(--text-3)', fontSize: 13 }}>
                 Nothing on your calendar today.
               </div>
             ) : (
@@ -588,20 +547,19 @@ export function BriefScreen() {
             <>
               <div style={{ height: 20 }} />
               <SectionLabel count={whatsOn.length}>What&rsquo;s on</SectionLabel>
-              <div className="tp-card flat">
+              <div className="tp-card popout" style={{ padding: '4px 16px' }}>
                 {whatsOn.map((e, i) => <EventRow key={i} event={e} />)}
               </div>
             </>
           )}
 
-          {/* Worth noting — expanded: inbox highlights + reading discoveries + places */}
-          {(worthNotingTexts.length > 0 || readingPicks.length > 0 || placesPicks.length > 0 || loading) && (
+          {/* Worth noting — inbox highlights from the morning-brief skill */}
+          {(worthNotingTexts.length > 0 || inboxItems.length > 0 || loading) && (
             <>
               <div style={{ height: 20 }} />
               <WorthNoting
-                emailTexts={worthNotingTexts}
-                readingPicks={readingPicks}
-                placesPicks={placesPicks}
+                items={inboxItems}
+                legacyTexts={worthNotingTexts}
                 loading={loading}
               />
             </>
@@ -614,7 +572,7 @@ export function BriefScreen() {
               {standaloneTexts.map((t, i) => (
                 <div
                   key={i}
-                  className="tp-card"
+                  className="tp-card popout"
                   style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 10, whiteSpace: 'pre-line' }}
                 >
                   {t}
@@ -628,7 +586,7 @@ export function BriefScreen() {
             <div key={i}>
               <div style={{ height: 20 }} />
               <SectionLabel>{s.header || 'Notes'}</SectionLabel>
-              <div className="tp-card" style={{ padding: '14px 16px' }}>
+              <div className="tp-card popout" style={{ padding: '14px 16px' }}>
                 {s.texts.length === 0 ? (
                   <div style={{ fontSize: 13, color: 'var(--text-3)' }}>—</div>
                 ) : (
