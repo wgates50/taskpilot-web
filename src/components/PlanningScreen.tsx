@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Icon } from './ui/Icon';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -731,6 +732,22 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
 
   useGeoLocation(handleGeoUpdate);
 
+  // Work-mode toggle (moved back from Settings per Wave 2 feedback —
+  // #38). When on, weekday 8am–5pm picks are filtered out further down the
+  // render pass. Persists to /api/context so Settings stays in sync.
+  const toggleWorkMode = useCallback(async (next: boolean) => {
+    setContext(prev => ({ ...prev, working_week_mode: next }));
+    try {
+      await fetch('/api/context', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'working_week_mode', value: next }),
+      });
+    } catch (e) {
+      console.error('Failed to update work_mode context:', e);
+    }
+  }, []);
+
   // Weather is fetched on-demand inside fetchData / suggestNow where it's
   // actually consumed for scoring — we no longer need to hold it in state
   // since the Wave 2 redesign removed the context-bar weather chip.
@@ -1185,6 +1202,20 @@ export function PlanningScreen({ embedded = false }: { embedded?: boolean }) {
           <div className="flex items-center gap-2">
             <button onClick={() => setWeekOffset(0)} className="text-sm font-medium text-gray-700">
               {weekLabel}
+            </button>
+            {/* Work-mode toggle — #38. Hides weekday 8am–5pm picks when on.
+                Kept in sync with Settings → /api/context. */}
+            <button
+              onClick={() => toggleWorkMode(!context.working_week_mode)}
+              title={context.working_week_mode ? 'Work mode on — weekday 8am–5pm picks hidden' : 'Turn on work mode to hide weekday 8am–5pm picks'}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors border ${
+                context.working_week_mode
+                  ? 'border-blue-300 bg-blue-100 text-blue-700 hover:bg-blue-200'
+                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <span>{context.working_week_mode ? '💼' : '🏠'}</span>
+              Work mode
             </button>
             <button
               onClick={handleRescore}
@@ -1948,19 +1979,20 @@ function BonusPickCard({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-1 mt-1.5">
+      <div className="flex items-center gap-1.5 mt-2">
         <button
           onClick={() => onAdd(place, anchor, dateKey)}
-          className="flex-1 py-1 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-md text-[11px] font-medium hover:bg-emerald-100 transition-colors"
+          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-emerald-300 bg-emerald-600 text-white rounded-md text-[12px] font-semibold hover:bg-emerald-700 active:bg-emerald-800 transition-colors shadow-sm"
         >
-          📅 Add to Calendar
+          <Icon name="calendar" size={14} stroke={2} />
+          Add to Calendar
         </button>
         {place.google_maps_url && (
           <a
             href={place.google_maps_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
+            className="px-2 py-1.5 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             title="Open in Google Maps"
           >
             📍
@@ -1971,7 +2003,7 @@ function BonusPickCard({
             href={place.website}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
+            className="px-2 py-1.5 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             title="Website"
           >
             🔗
@@ -1979,7 +2011,7 @@ function BonusPickCard({
         )}
         <button
           onClick={() => onDismiss(place, dateKey)}
-          className="px-2 py-1 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
+          className="px-2 py-1.5 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
           title="Dismiss"
         >
           ✕
@@ -2095,13 +2127,14 @@ function EventCard({ event, onAction }: {
           </button>
         </div>
       ) : (
-        <div className="flex items-center gap-1 mt-1.5">
+        <div className="flex items-center gap-1.5 mt-2">
           <button
             onClick={() => onAction(event.id, 'accepted')}
             title="Add this event to your Google Calendar"
-            className="flex-1 py-1 border border-blue-200 bg-blue-50 text-blue-600 rounded-md text-[11px] font-medium hover:bg-blue-100 transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-blue-500 bg-blue-600 text-white rounded-md text-[12px] font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm"
           >
-            📅 Calendar
+            <Icon name="calendar" size={14} stroke={2} />
+            Add to Calendar
           </button>
           {event.url && (
             <a
@@ -2109,7 +2142,7 @@ function EventCard({ event, onAction }: {
               target="_blank"
               rel="noopener noreferrer"
               title={event.reason && !event.reason.startsWith('Synced from') ? event.reason : `View details for ${event.title}`}
-              className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
+              className="px-2 py-1.5 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             >
               ⓘ
             </a>
@@ -2120,7 +2153,7 @@ function EventCard({ event, onAction }: {
               target="_blank"
               rel="noopener noreferrer"
               title={`Find ${event.venue} on Google Maps`}
-              className="px-2 py-1 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
+              className="px-2 py-1.5 border border-gray-200 text-gray-600 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
             >
               📍
             </a>
@@ -2128,7 +2161,7 @@ function EventCard({ event, onAction }: {
           <button
             onClick={() => onAction(event.id, 'dismissed')}
             title="Dismiss — hide this event"
-            className="px-2 py-1 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
+            className="px-2 py-1.5 border border-gray-200 text-gray-400 rounded-md text-[11px] font-medium hover:bg-gray-50 transition-colors"
           >
             ✕
           </button>

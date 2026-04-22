@@ -156,37 +156,8 @@ function SettingsHomeView({
   const [readingOn, setReadingOn] = useState(true);
   const [discoveryOn, setDiscoveryOn] = useState(true);
 
-  // Work mode — mirrors /api/context `working_week_mode`.
-  // Moved here from the Planner's context bar in Wave 2; when on, the Planner
-  // hides 8am–5pm suggestions on weekdays.
-  const [workModeOn, setWorkModeOn] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/context')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (cancelled) return;
-        setWorkModeOn(Boolean(d?.context?.working_week_mode));
-      })
-      .catch(() => {
-        /* ignore — default stays off */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  const toggleWorkMode = async (next: boolean) => {
-    setWorkModeOn(next);
-    try {
-      await fetch('/api/context', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'working_week_mode', value: next }),
-      });
-    } catch {
-      // best-effort — UI stays in sync with the user's last click
-    }
-  };
+  // Work mode toggle moved back to the Planner header per #38 feedback —
+  // it lives closer to the suggestions it affects.
 
   const darkOn = prefs.theme === 'dark';
 
@@ -308,15 +279,6 @@ function SettingsHomeView({
             </div>
             <div className="control">
               <Switch on={darkOn} onChange={() => prefs.toggleTheme()} ariaLabel="Dark mode" />
-            </div>
-          </div>
-          <div className="settings-row">
-            <div>
-              <div className="label">Work mode</div>
-              <div className="desc">Hide 8am–5pm picks on weekdays</div>
-            </div>
-            <div className="control">
-              <Switch on={workModeOn} onChange={toggleWorkMode} ariaLabel="Work mode" />
             </div>
           </div>
           <div className="settings-row">
