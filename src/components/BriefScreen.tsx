@@ -249,9 +249,16 @@ interface PlacePick {
   area?: string;
   cuisine_tags?: string[];
   vibe_tags?: string[];
-  google_rating?: number;
+  // Postgres NUMERIC returns as a string via @vercel/postgres. Accept both.
+  google_rating?: number | string | null;
   google_maps_url?: string;
   website?: string;
+}
+
+function ratingNumber(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function WorthNoting({
@@ -330,6 +337,7 @@ function WorthNoting({
               const url = p.google_maps_url || p.website;
               const open = () => url && window.open(url, '_blank', 'noopener,noreferrer');
               const tags = [p.area, p.category, ...(p.cuisine_tags ?? []).slice(0, 2)].filter(Boolean).join(' · ');
+              const rating = ratingNumber(p.google_rating);
               return (
                 <button
                   key={p.id}
@@ -343,7 +351,7 @@ function WorthNoting({
                   <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{p.name}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
                     {tags}
-                    {p.google_rating !== undefined && p.google_rating !== null && <span> · ★ {p.google_rating.toFixed(1)}</span>}
+                    {rating !== null && <span> · ★ {rating.toFixed(1)}</span>}
                   </div>
                 </button>
               );

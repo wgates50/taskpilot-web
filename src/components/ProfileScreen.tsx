@@ -39,10 +39,12 @@ interface Place {
   category: string | null;
   area: string | null;
   address: string | null;
-  google_rating: number | null;
+  // Postgres NUMERIC returns as a string via @vercel/postgres. Accept both.
+  google_rating: number | string | null;
   price_tier: string | null;
-  lat: number | null;
-  lng: number | null;
+  // Same for lat/lng (NUMERIC in schema).
+  lat: number | string | null;
+  lng: number | string | null;
   google_place_id: string | null;
   google_maps_url: string | null;
   vibe_tags: string[] | null;
@@ -731,7 +733,12 @@ function PlacesDBView({ onBack }: { onBack: () => void }) {
                           <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-0.5">
                             {p.category && <span>{p.category}</span>}
                             {p.area && <><span>&middot;</span><span>{p.area}</span></>}
-                            {typeof p.google_rating === 'number' && <><span>&middot;</span><span>★ {p.google_rating.toFixed(1)}</span></>}
+                            {(() => {
+                              const r = p.google_rating == null ? null : Number(p.google_rating);
+                              return r !== null && Number.isFinite(r)
+                                ? <><span>&middot;</span><span>★ {r.toFixed(1)}</span></>
+                                : null;
+                            })()}
                           </div>
                         </div>
                         <span className="text-gray-300 text-xs">{isOpen ? '−' : '+'}</span>
@@ -741,7 +748,12 @@ function PlacesDBView({ onBack }: { onBack: () => void }) {
                       <div className="mt-2 pt-2 border-t border-gray-100 space-y-1 text-[11px] text-gray-500">
                         {p.address && <p>{p.address}</p>}
                         {p.price_tier && <p>Price: {p.price_tier}</p>}
-                        {p.lat !== null && p.lng !== null && <p>Coords: {p.lat.toFixed(4)}, {p.lng.toFixed(4)}</p>}
+                        {(() => {
+                          const lat = p.lat == null ? null : Number(p.lat);
+                          const lng = p.lng == null ? null : Number(p.lng);
+                          if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+                          return <p>Coords: {lat.toFixed(4)}, {lng.toFixed(4)}</p>;
+                        })()}
                         {renderTags('Vibe', p.vibe_tags)}
                         {renderTags('Weather', p.weather_tags)}
                         {renderTags('Time', p.time_tags)}
