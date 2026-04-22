@@ -46,6 +46,20 @@ function envOrThrow(key: string): string {
   return val;
 }
 
+/**
+ * Returns true only when the server has the OAuth client credentials it needs
+ * to talk to Google on the user's behalf. The Settings tile and the Calendar
+ * tab both need this: without CLIENT_ID/SECRET/REDIRECT_URI we can't even
+ * refresh an access token, so reporting "connected" is misleading.
+ */
+export function hasOAuthEnv(): boolean {
+  return Boolean(
+    process.env.GOOGLE_OAUTH_CLIENT_ID &&
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET &&
+    process.env.GOOGLE_OAUTH_REDIRECT_URI,
+  );
+}
+
 /** Build the Google consent URL the user redirects to. */
 export function getAuthUrl(state: string = ''): string {
   const params = new URLSearchParams({
@@ -144,7 +158,10 @@ export async function getValidAccessToken(): Promise<string | null> {
   const stillValid = tokens.expires_at - Date.now() > 60_000;
   if (stillValid) return tokens.access_token;
 
-  // Expired — refresh and persist.
+  // Expired — refresh requires client credentials. Bail cleanly with
+  // NOT_CONFIGURED instead of leaking the raw "Missing env var" message
+  // from envOrThrow — the caller translates that to a 412 response.
+  if (!hasOAuthEnv()) throw new Error('NOT_CONFIGURED');
   const refreshed = await refreshAccessToken(tokens.refresh_token);
   const updated: StoredTokens = { ...tokens, ...refreshed };
   await saveTokens(updated);
@@ -197,14 +214,27 @@ export async function createCalendarEvent(
   };
 }
 
-/** Check whether Google Calendar is connected (tokens present and scope is right). */
+/**
+ * Reasons the user is not connected. `NOT_CONFIGURED` means the server is
+ * missing OAuth credentials (CLIENT_ID / SECRET / REDIRECT_URI) — the UI
+ * should show a "server setup missing" state instead of a Connect button,
+ * since clicking Connect would 500 anyway. `NOT_CONNECTED` means the
+ * server is configured but the user hasn't gone through consent yet.
+ */
+export type ConnectionReason = 'NOT_CONFIGURED' | 'NOT_CONNECTED';
+
+/** Check whether Google Calendar is connected (env present, tokens present). */
 export async function getConnectionStatus(): Promise<{
   connected: boolean;
+  reason?: ConnectionReason;
   scope?: string;
   expiresAt?: number;
 }> {
+  if (!hasOAuthEnv()) {
+    return { connected: false, reason: 'NOT_CONFIGURED' };
+  }
   const tokens = await loadTokens();
-  if (!tokens) return { connected: false };
+  if (!tokens) return { connected: false, reason: 'NOT_CONNECTED' };
   return {
     connected: true,
     scope: tokens.scope,

@@ -316,7 +316,10 @@ function HourRow({
 
 // ── Main component ───────────────────────────────────────
 
-type ConnState = 'loading' | 'connected' | 'disconnected' | 'error';
+// 'misconfigured' = server lacks GOOGLE_OAUTH_* env vars. Distinct from
+// 'disconnected' because clicking Connect would 500 instead of doing
+// anything useful — we show a setup-needed card instead.
+type ConnState = 'loading' | 'connected' | 'disconnected' | 'misconfigured' | 'error';
 
 export function CalendarScreen() {
   const [mode, setMode] = useState<CalendarMode>('personal');
@@ -344,7 +347,9 @@ export function CalendarScreen() {
         `/api/calendar/events?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
       );
       if (res.status === 412) {
-        setConnState('disconnected');
+        const body = await res.json().catch(() => ({}));
+        setConnState(body?.error === 'NOT_CONFIGURED' ? 'misconfigured' : 'disconnected');
+        if (body?.error === 'NOT_CONFIGURED') setErrorMsg(body?.detail ?? null);
         setEvents([]);
         return;
       }
@@ -490,6 +495,8 @@ export function CalendarScreen() {
         </div>
       ) : connState === 'disconnected' ? (
         <NotConnectedCard />
+      ) : connState === 'misconfigured' ? (
+        <MisconfiguredCard detail={errorMsg} />
       ) : connState === 'error' ? (
         <ErrorCard message={errorMsg ?? 'Unknown error'} onRetry={fetchEvents} />
       ) : (
@@ -862,6 +869,31 @@ function NotConnectedCard() {
       <a className="tp-btn" href="/api/auth/google/consent" style={{ marginTop: 14 }}>
         <Icon name="external" size={13} /> Connect Google Calendar
       </a>
+    </div>
+  );
+}
+
+function MisconfiguredCard({ detail }: { detail: string | null }) {
+  return (
+    <div className="tp-card" style={{ padding: 20 }}>
+      <div
+        className="mono"
+        style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.06em' }}
+      >
+        SETUP NEEDED
+      </div>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginTop: 6 }}>
+        Server is missing Google OAuth credentials
+      </h3>
+      <p style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 6 }}>
+        {detail ??
+          'Set GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and ' +
+          'GOOGLE_OAUTH_REDIRECT_URI in your environment, then reload.'}
+      </p>
+      <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
+        Running locally? Try <code>vercel env pull .env.local</code>. Full
+        walkthrough in <code>GOOGLE_OAUTH_SETUP.md</code>.
+      </p>
     </div>
   );
 }

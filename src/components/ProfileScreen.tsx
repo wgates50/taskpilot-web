@@ -60,6 +60,9 @@ interface Place {
 
 interface GoogleStatus {
   connected: boolean;
+  // 'NOT_CONFIGURED' = server lacks CLIENT_ID/SECRET/REDIRECT_URI.
+  // 'NOT_CONNECTED'  = server is configured but user hasn't consented yet.
+  reason?: 'NOT_CONFIGURED' | 'NOT_CONNECTED';
   scope?: string;
   expiresAt?: number;
   error?: string;
@@ -223,12 +226,22 @@ function SettingsHomeView({
                 <span className={`status-dot ${googleStatus?.connected ? '' : 'off'}`} />
                 {googleStatus?.connected
                   ? 'Connected · event sync active'
+                  : googleStatus?.reason === 'NOT_CONFIGURED'
+                  ? 'Server setup missing — GOOGLE_OAUTH_* env vars'
                   : 'Not connected'}
               </div>
             </div>
             {googleStatus?.connected ? (
               <span className="tp-btn sm" style={{ pointerEvents: 'none', color: 'var(--text-3)' }}>
                 Manage
+              </span>
+            ) : googleStatus?.reason === 'NOT_CONFIGURED' ? (
+              <span
+                className="tp-btn sm"
+                style={{ pointerEvents: 'none', color: 'var(--text-3)' }}
+                title="Set GOOGLE_OAUTH_CLIENT_ID / _SECRET / _REDIRECT_URI in your environment (see GOOGLE_OAUTH_SETUP.md) then reload."
+              >
+                Setup needed
               </span>
             ) : (
               <a className="tp-btn sm accent" href="/api/auth/google/consent">Connect</a>

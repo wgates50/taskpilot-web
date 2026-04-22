@@ -27,6 +27,18 @@ export async function GET(req: NextRequest) {
         { status: 412 },
       );
     }
+    if (msg === 'NOT_CONFIGURED') {
+      return NextResponse.json(
+        {
+          error: 'NOT_CONFIGURED',
+          detail:
+            'Google OAuth client credentials are missing on the server. ' +
+            'Set GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET / ' +
+            'GOOGLE_OAUTH_REDIRECT_URI in your environment.',
+        },
+        { status: 412 },
+      );
+    }
     console.error('GET /api/calendar/events error:', msg);
     return NextResponse.json({ error: 'Internal server error', detail: msg }, { status: 500 });
   }
