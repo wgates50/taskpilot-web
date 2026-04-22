@@ -237,6 +237,128 @@ interface ArticleData {
   isDiscovery?: boolean;
 }
 
+// ── Worth noting (Wave 2) ───────────────────────────────
+// Expanded replacement for the old "Worth Knowing" section. Aggregates
+// email/admin notes from the morning-brief skill, recent reading discoveries,
+// and rotating picks from the places DB.
+
+interface PlacePick {
+  id: string;
+  name: string;
+  category?: string;
+  area?: string;
+  cuisine_tags?: string[];
+  vibe_tags?: string[];
+  google_rating?: number;
+  google_maps_url?: string;
+  website?: string;
+}
+
+function WorthNoting({
+  emailTexts,
+  readingPicks,
+  placesPicks,
+  loading,
+}: {
+  emailTexts: string[];
+  readingPicks: ArticleData[];
+  placesPicks: PlacePick[];
+  loading: boolean;
+}) {
+  const hasAny = emailTexts.length > 0 || readingPicks.length > 0 || placesPicks.length > 0;
+  if (!hasAny && !loading) return null;
+
+  return (
+    <>
+      <SectionLabel>Worth noting</SectionLabel>
+      <div className="tp-card" style={{ padding: 0, overflow: 'hidden' }}>
+        {/* Admin / email notes from the morning-brief skill */}
+        {emailTexts.length > 0 && (
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 6 }}>
+              From your inbox
+            </div>
+            {emailTexts.map((t, i) => (
+              <div
+                key={i}
+                style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, whiteSpace: 'pre-line', marginTop: i === 0 ? 0 : 10 }}
+              >
+                {t}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Reading discoveries */}
+        {readingPicks.length > 0 && (
+          <div style={{ padding: '14px 16px', borderBottom: placesPicks.length > 0 ? '1px solid var(--line)' : 0 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>
+              Discoveries to read
+            </div>
+            {readingPicks.map((a, i) => {
+              const open = () => a.url && window.open(a.url, '_blank', 'noopener,noreferrer');
+              return (
+                <button
+                  key={i}
+                  onClick={open}
+                  type="button"
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 0,
+                    padding: i === 0 ? '2px 0' : '8px 0 2px', cursor: a.url ? 'pointer' : 'default', color: 'inherit',
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{a.title || 'Untitled'}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                    {a.source && <span><b>{a.source}</b></span>}
+                    {a.minutes !== undefined && <span> · {a.minutes} min</span>}
+                    {(a.readingTimeMinutes !== undefined && a.minutes === undefined) && <span> · {a.readingTimeMinutes} min</span>}
+                    {a.topic && <span> · {a.topic}</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Places worth a revisit / seasonal */}
+        {placesPicks.length > 0 && (
+          <div style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>
+              Places on the radar
+            </div>
+            {placesPicks.map((p, i) => {
+              const url = p.google_maps_url || p.website;
+              const open = () => url && window.open(url, '_blank', 'noopener,noreferrer');
+              const tags = [p.area, p.category, ...(p.cuisine_tags ?? []).slice(0, 2)].filter(Boolean).join(' · ');
+              return (
+                <button
+                  key={p.id}
+                  onClick={open}
+                  type="button"
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 0,
+                    padding: i === 0 ? '2px 0' : '8px 0 2px', cursor: url ? 'pointer' : 'default', color: 'inherit',
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{p.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                    {tags}
+                    {p.google_rating !== undefined && p.google_rating !== null && <span> · ★ {p.google_rating.toFixed(1)}</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {loading && !hasAny && (
+          <div style={{ padding: 16, color: 'var(--text-3)', fontSize: 13 }}>Gathering…</div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function ArticleRow({ article, index }: { article: ArticleData; index: number }) {
   const title = article.title || 'Untitled';
   const source = article.source || '';
@@ -270,16 +392,23 @@ function ArticleRow({ article, index }: { article: ArticleData; index: number })
 export function BriefScreen() {
   const [briefMsg, setBriefMsg] = useState<MessageRow | null>(null);
   const [readingMsg, setReadingMsg] = useState<MessageRow | null>(null);
+  const [placesPicks, setPlacesPicks] = useState<PlacePick[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchAll = useCallback(async () => {
-    const [briefRes, readingRes] = await Promise.all([
+    const [briefRes, readingRes, placesRes] = await Promise.all([
       fetch('/api/messages?taskId=morning-brief&limit=1').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       fetch('/api/messages?taskId=smart-reading-digest&limit=1').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch('/api/places?limit=50').then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     setBriefMsg(briefRes?.messages?.[0] ?? null);
     setReadingMsg(readingRes?.messages?.[0] ?? null);
+    // Rotate 3 random places each load to keep "worth noting" feeling fresh.
+    const allPlaces: PlacePick[] = placesRes?.places ?? [];
+    const enriched = allPlaces.filter((p) => p.name && (p.google_rating || p.website || p.google_maps_url));
+    const shuffled = [...enriched].sort(() => Math.random() - 0.5).slice(0, 3);
+    setPlacesPicks(shuffled);
   }, []);
 
   useEffect(() => {
@@ -301,7 +430,15 @@ export function BriefScreen() {
   const whatsOn: EventData[] = [];
   const briefSections: { header: string; texts: string[] }[] = [];
   const standaloneTexts: string[] = [];
+  const worthNotingTexts: string[] = [];
   let currentSection: { header: string; texts: string[] } | null = null;
+  let skipCurrentSection = false;
+  let currentIsWorthNoting = false;
+
+  // Wave 2: Tonight's Pick and On Your Plate are out. Worth Knowing becomes
+  // Worth noting and gets surfaced via a richer custom renderer below.
+  const isFilteredHeader = (h: string) => /tonight|plate/i.test(h);
+  const isWorthNotingHeader = (h: string) => /worth\s+(noting|knowing)/i.test(h);
 
   for (const block of blocks) {
     const data = (block.data ?? block) as Record<string, unknown>;
@@ -320,6 +457,19 @@ export function BriefScreen() {
         break;
       case 'section_header': {
         const text = String(data.text ?? data.content ?? data.title ?? '').trim();
+        if (isFilteredHeader(text)) {
+          skipCurrentSection = true;
+          currentIsWorthNoting = false;
+          currentSection = null;
+          break;
+        }
+        skipCurrentSection = false;
+        if (isWorthNotingHeader(text)) {
+          currentIsWorthNoting = true;
+          currentSection = null;
+          break;
+        }
+        currentIsWorthNoting = false;
         currentSection = { header: text, texts: [] };
         briefSections.push(currentSection);
         break;
@@ -327,6 +477,8 @@ export function BriefScreen() {
       case 'text': {
         const text = String(data.text ?? data.content ?? data.title ?? '').trim();
         if (!text) break;
+        if (skipCurrentSection) break;
+        if (currentIsWorthNoting) { worthNotingTexts.push(text); break; }
         if (currentSection) currentSection.texts.push(text);
         else standaloneTexts.push(text);
         break;
@@ -347,6 +499,8 @@ export function BriefScreen() {
 
   const articleBlocks = (readingMsg?.blocks ?? []).filter((b) => b.type === 'article_card');
   const articles = articleBlocks.map((b) => (b.data ?? b) as ArticleData);
+  // Discovery picks feed Worth noting; cap at 3 to keep the card scan-able.
+  const readingPicks = articles.filter((a) => a.isDiscovery).slice(0, 3);
 
   const now = new Date();
 
@@ -429,6 +583,19 @@ export function BriefScreen() {
               <div className="tp-card flat">
                 {whatsOn.map((e, i) => <EventRow key={i} event={e} />)}
               </div>
+            </>
+          )}
+
+          {/* Worth noting — expanded: inbox highlights + reading discoveries + places */}
+          {(worthNotingTexts.length > 0 || readingPicks.length > 0 || placesPicks.length > 0 || loading) && (
+            <>
+              <div style={{ height: 20 }} />
+              <WorthNoting
+                emailTexts={worthNotingTexts}
+                readingPicks={readingPicks}
+                placesPicks={placesPicks}
+                loading={loading}
+              />
             </>
           )}
 
