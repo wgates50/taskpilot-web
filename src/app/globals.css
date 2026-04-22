@@ -855,7 +855,7 @@ html[data-direction="things"] .event-card .reason {
 .week-grid-hour-label {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--text-4);
+  color: var(--text-3);
   padding: 8px 8px 0;
   text-align: right;
   border-top: 1px solid var(--line);
